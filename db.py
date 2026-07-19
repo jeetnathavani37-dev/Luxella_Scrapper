@@ -3,18 +3,25 @@ Supabase ke saath baat-cheet: purana data padhna, naya data compare karna,
 aur sirf changes ko product_changes table me likhna.
 """
 import os
+import json
+import base64
 from datetime import datetime, timezone
 from supabase import create_client
 
 SUPABASE_URL = os.environ["SUPABASE_URL"].strip()
 SUPABASE_KEY = os.environ["SUPABASE_SERVICE_KEY"].strip()
 
-# ---- DIAGNOSTIC: key sahi pahunchi ya nahi, bina poori key dikhaye ----
-print(f"[DEBUG] SUPABASE_URL = {SUPABASE_URL!r}")
-print(f"[DEBUG] SUPABASE_SERVICE_KEY length = {len(SUPABASE_KEY)}")
-print(f"[DEBUG] SUPABASE_SERVICE_KEY starts/ends = {SUPABASE_KEY[:8]}...{SUPABASE_KEY[-8:]}")
-print(f"[DEBUG] SUPABASE_SERVICE_KEY dot count (JWT has 2) = {SUPABASE_KEY.count('.')}")
-# -------------------------------------------------------------------
+# ---- DIAGNOSTIC: key ke andar chhupi info dekhte hain (safe, non-sensitive) ----
+try:
+    payload_part = SUPABASE_KEY.split(".")[1]
+    padded = payload_part + "=" * (-len(payload_part) % 4)
+    decoded = json.loads(base64.urlsafe_b64decode(padded))
+    print(f"[DEBUG] JWT ref (project id in key) = {decoded.get('ref')}")
+    print(f"[DEBUG] JWT role = {decoded.get('role')}")
+    print(f"[DEBUG] URL project id (from SUPABASE_URL) = {SUPABASE_URL.split('//')[1].split('.')[0]}")
+except Exception as e:
+    print(f"[DEBUG] could not decode JWT: {e}")
+# --------------------------------------------------------------------------------
 
 supabase = create_client(SUPABASE_URL, SUPABASE_KEY)
 
