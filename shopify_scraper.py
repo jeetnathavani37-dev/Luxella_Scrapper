@@ -5,6 +5,13 @@ Shopify ka public /products.json endpoint use karta hai.
 import requests
 from datetime import datetime, timezone
 
+HEADERS = {
+    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
+                  "(KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
+    "Accept": "application/json, text/plain, */*",
+    "Accept-Language": "en-US,en;q=0.9",
+}
+
 
 def scrape_shopify(config):
     domain = config["domain"]
@@ -12,12 +19,9 @@ def scrape_shopify(config):
     all_products = []
     page = 1
 
-    while page <= 20:  # safety cap
+    while page <= 20:
         url = f"{domain}/products.json?limit=250&page={page}"
-        resp = requests.get(
-            url, timeout=20,
-            headers={"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)"}
-        )
+        resp = requests.get(url, timeout=20, headers=HEADERS)
         if resp.status_code != 200:
             print(f"  [Shopify] {url} -> status {resp.status_code}, stopping")
             break
