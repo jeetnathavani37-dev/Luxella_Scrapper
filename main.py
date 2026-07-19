@@ -11,6 +11,7 @@ from playwright.sync_api import sync_playwright
 
 from sites import SITES
 from extract import scrape_site
+from shopify_scraper import scrape_shopify
 from db import save_product
 
 
@@ -55,10 +56,15 @@ def run():
         for config in SITES:
             print(f"\n=== Scraping: {config['name']} ===")
             try:
-                browser, context = build_browser_context(p, config)
-                page = context.new_page()
-
-                products = scrape_site(page, config)
+                if config.get("platform") == "shopify":
+                    # halka rasta - koi browser/proxy nahi chahiye
+                    products = scrape_shopify(config)
+                    print(f"  {config['domain']} -> {len(products)} products")
+                else:
+                    browser, context = build_browser_context(p, config)
+                    page = context.new_page()
+                    products = scrape_site(page, config)
+                    browser.close()
 
                 for product in products:
                     try:
@@ -74,7 +80,6 @@ def run():
                         summary["errors"] += 1
                         print(f"  [ERROR saving product] {e}")
 
-                browser.close()
             except Exception as e:
                 summary["errors"] += 1
                 print(f"  [ERROR scraping site] {e}")
