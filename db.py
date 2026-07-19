@@ -6,8 +6,8 @@ import os
 from datetime import datetime, timezone
 from supabase import create_client
 
-SUPABASE_URL = os.environ["SUPABASE_URL"]
-SUPABASE_KEY = os.environ["SUPABASE_SERVICE_KEY"]
+SUPABASE_URL = os.environ["SUPABASE_URL"].strip()
+SUPABASE_KEY = os.environ["SUPABASE_SERVICE_KEY"].strip()
 
 # ---- DIAGNOSTIC: key sahi pahunchi ya nahi, bina poori key dikhaye ----
 print(f"[DEBUG] SUPABASE_URL = {SUPABASE_URL!r}")
