@@ -26,7 +26,7 @@ SITES = [
             "https://www.coach.com/shop/women/bestsellers",
         ],
         "needs_browser": True,
-        "needs_proxy": True,   # Coach bhi Akamai-protected nikla, proxy chahiye
+        "needs_proxy": True,
         "proxy_country": "us",
         "tile_selector": ".product-tile",
         "name_selector": '[class*="name"], [class*="title"], .pdp-link',
@@ -41,6 +41,13 @@ SITES = [
         "domain": "https://www.karllagerfeldparis.com",
         "category": "clothing",
         "currency": "USD",
+    },
+    {
+        "name": "polene",
+        "platform": "shopify",
+        "domain": "https://uk.polene-paris.com",
+        "category": "handbags",
+        "currency": "GBP",
     },
 
     # ============================================================
