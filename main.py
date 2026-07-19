@@ -19,7 +19,7 @@ def build_browser_context(playwright, config):
     launch_args = {"headless": True}
 
     if config.get("needs_proxy"):
-        proxy_server = os.environ.get("PROXY_SERVER")   # e.g. "http://provider-host:port"
+        proxy_server = os.environ.get("PROXY_SERVER")
         proxy_user = os.environ.get("PROXY_USERNAME")
         proxy_pass = os.environ.get("PROXY_PASSWORD")
         if proxy_server:
@@ -32,10 +32,18 @@ def build_browser_context(playwright, config):
             print(f"  [WARNING] {config['name']} ko proxy chahiye par PROXY_SERVER secret set nahi hai — "
                   f"is site pe block hone ka risk hai.")
 
+    launch_args["args"] = ["--disable-blink-features=AutomationControlled"]
+
     browser = playwright.chromium.launch(**launch_args)
     context = browser.new_context(
         user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
-                   "(KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36"
+                   "(KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
+        viewport={"width": 1366, "height": 900},
+        locale="en-US",
+        extra_http_headers={"Accept-Language": "en-US,en;q=0.9"},
+    )
+    context.add_init_script(
+        "Object.defineProperty(navigator, 'webdriver', {get: () => undefined});"
     )
     return browser, context
 
