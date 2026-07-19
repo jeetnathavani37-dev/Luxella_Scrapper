@@ -7,13 +7,19 @@ from datetime import datetime, timezone
 from supabase import create_client
 
 SUPABASE_URL = os.environ["SUPABASE_URL"]
-SUPABASE_KEY = os.environ["SUPABASE_SERVICE_KEY"]  # service role key (RLS bypass karne ke liye)
+SUPABASE_KEY = os.environ["SUPABASE_SERVICE_KEY"]
+
+# ---- DIAGNOSTIC: key sahi pahunchi ya nahi, bina poori key dikhaye ----
+print(f"[DEBUG] SUPABASE_URL = {SUPABASE_URL!r}")
+print(f"[DEBUG] SUPABASE_SERVICE_KEY length = {len(SUPABASE_KEY)}")
+print(f"[DEBUG] SUPABASE_SERVICE_KEY starts/ends = {SUPABASE_KEY[:8]}...{SUPABASE_KEY[-8:]}")
+print(f"[DEBUG] SUPABASE_SERVICE_KEY dot count (JWT has 2) = {SUPABASE_KEY.count('.')}")
+# -------------------------------------------------------------------
 
 supabase = create_client(SUPABASE_URL, SUPABASE_KEY)
 
 
 def get_existing_product(site, sku, product_url):
-    """Purana record dhoondo agar hai to (price/stock compare karne ke liye)."""
     query = supabase.table("products").select("*").eq("site", site)
     if sku:
         query = query.eq("sku", sku)
@@ -36,16 +42,9 @@ def log_change(site, sku, product_url, name, change_type, old_value, new_value):
 
 
 def save_product(product):
-    """
-    Ek product ko save karta hai:
-    - agar naya hai -> products table me insert
-    - agar pehle se hai aur price/stock badla -> update + product_changes me log
-    - agar kuch nahi badla -> sirf last_checked_at update
-    """
     existing = get_existing_product(product["site"], product.get("sku"), product["product_url"])
 
     if existing is None:
-        # bilkul naya product
         supabase.table("products").insert({
             **product,
             "last_checked_at": datetime.now(timezone.utc).isoformat(),
@@ -53,8 +52,6 @@ def save_product(product):
         return "new"
 
     changes_found = []
-
-    # price change check
     old_price = existing.get("price")
     new_price = product.get("price")
     if old_price is not None and new_price is not None and old_price != new_price:
@@ -63,7 +60,6 @@ def save_product(product):
                    product.get("name"), change_type, old_price, new_price)
         changes_found.append(change_type)
 
-    # stock change check
     old_stock = existing.get("in_stock")
     new_stock = product.get("in_stock")
     if old_stock is not None and new_stock is not None and old_stock != new_stock:
@@ -72,7 +68,6 @@ def save_product(product):
                    product.get("name"), change_type, old_stock, new_stock)
         changes_found.append(change_type)
 
-    # products table update (chahe change ho ya na ho, last_checked_at to update hoga)
     supabase.table("products").update({
         **product,
         "last_checked_at": datetime.now(timezone.utc).isoformat(),
