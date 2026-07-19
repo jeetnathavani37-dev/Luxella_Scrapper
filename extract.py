@@ -52,13 +52,11 @@ def extract_products(page, config):
         if product_url and product_url.startswith("/"):
             product_url = page.url.split("/", 3)[0] + "//" + page.url.split("/", 3)[2] + product_url
 
-        # sku: data-pid attribute try karo, warna URL se nikaal lo
         sku = tile.get_attribute("data-pid")
         if not sku and product_url:
             m = re.search(r"/([A-Z0-9]{6,})\.html", product_url, re.I)
             sku = m.group(1) if m else None
 
-        # image: placeholder (base64) skip karo, asli src/data-src lo
         image_url = None
         if img_el:
             src = img_el.get_attribute("src") or ""
@@ -75,7 +73,7 @@ def extract_products(page, config):
             "sku": sku,
             "name": name,
             "price": to_num(price_raw),
-            "in_stock": True,  # default; site-specific "sold out" detection neeche add karo agar zarurat ho
+            "in_stock": True,
             "product_url": product_url,
             "image_url": image_url,
             "currency": config.get("currency", "USD"),
@@ -91,9 +89,18 @@ def scrape_site(page, config):
         page.goto(url, wait_until="networkidle", timeout=60000)
         click_load_more_and_scroll(page, config.get("load_more_selector"))
         products = extract_products(page, config)
+
+        if len(products) == 0:
+            title = page.title()
+            tile_count = len(page.query_selector_all(config["tile_selector"]))
+            body_snippet = page.inner_text("body")[:200].replace("\n", " ")
+            print(f"  [DEBUG] page title: {title}")
+            print(f"  [DEBUG] tile_selector matches: {tile_count}")
+            print(f"  [DEBUG] body text starts with: {body_snippet}")
+
         for p in products:
             p["site"] = config["name"]
-            p["category"] = "uncategorized"  # baad me URL se guess kar sakte hain
+            p["category"] = "uncategorized"
             p["brand"] = config["name"]
             p["scraped_at"] = datetime.now(timezone.utc).isoformat()
         all_products.extend(products)
