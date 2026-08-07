@@ -49,7 +49,13 @@ SITES = [
         "category": "handbags",
         "currency": "GBP",
     },
-
+{
+        "name": "jwpei",
+        "platform": "shopify",
+        "domain": "https://www.jwpei.com",
+        "category": "handbags",
+        "currency": "USD",
+    },
     # ============================================================
     # Naya Shopify site jodne ka TEMPLATE:
     # ============================================================
