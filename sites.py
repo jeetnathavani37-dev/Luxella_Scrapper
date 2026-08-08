@@ -49,13 +49,35 @@ SITES = [
         "category": "handbags",
         "currency": "GBP",
     },
-{
+    {
         "name": "jwpei",
         "platform": "shopify",
         "domain": "https://www.jwpei.com",
         "category": "handbags",
         "currency": "USD",
     },
+    {
+        "name": "aloyoga",
+        "platform": "shopify",
+        "domain": "https://www.aloyoga.com",
+        "category": "activewear",
+        "currency": "USD",
+    },
+    {
+        "name": "gymshark",
+        "platform": "shopify",
+        "domain": "https://www.gymshark.com",
+        "category": "activewear",
+        "currency": "USD",
+    },
+    {
+        "name": "stanley1913",
+        "platform": "shopify",
+        "domain": "https://www.stanley1913.com",
+        "category": "drinkware",
+        "currency": "USD",
+    },
+
     # ============================================================
     # Naya Shopify site jodne ka TEMPLATE:
     # ============================================================
