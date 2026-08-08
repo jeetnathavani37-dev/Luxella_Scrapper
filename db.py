@@ -7,11 +7,11 @@ import json
 import base64
 from datetime import datetime, timezone
 from supabase import create_client
+from pricing import calculate_pricing
 
 SUPABASE_URL = os.environ["SUPABASE_URL"].strip()
 SUPABASE_KEY = os.environ["SUPABASE_SERVICE_KEY"].strip()
 
-# ---- DIAGNOSTIC: key ke andar chhupi info dekhte hain (safe, non-sensitive) ----
 try:
     payload_part = SUPABASE_KEY.split(".")[1]
     padded = payload_part + "=" * (-len(payload_part) % 4)
@@ -21,7 +21,6 @@ try:
     print(f"[DEBUG] URL project id (from SUPABASE_URL) = {SUPABASE_URL.split('//')[1].split('.')[0]}")
 except Exception as e:
     print(f"[DEBUG] could not decode JWT: {e}")
-# --------------------------------------------------------------------------------
 
 supabase = create_client(SUPABASE_URL, SUPABASE_KEY)
 
@@ -49,6 +48,14 @@ def log_change(site, sku, product_url, name, change_type, old_value, new_value):
 
 
 def save_product(product):
+    pricing_fields = calculate_pricing(
+        product.get("price"),
+        product.get("category"),
+        product.get("currency", "USD"),
+        name=product.get("name"),
+    )
+    product = {**product, **pricing_fields}
+
     existing = get_existing_product(product["site"], product.get("sku"), product["product_url"])
 
     if existing is None:
