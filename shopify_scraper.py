@@ -13,6 +13,15 @@ HEADERS = {
 }
 
 
+def extract_color(product, variant):
+    """Product ke 'options' list me Color/Colour dhoondhta hai, variant se value nikalta hai."""
+    options = product.get("options", [])
+    for idx, opt in enumerate(options):
+        if opt.get("name", "").lower() in ("color", "colour"):
+            return variant.get(f"option{idx + 1}")
+    return None
+
+
 def scrape_shopify(config):
     domain = config["domain"]
     site = config["name"]
@@ -43,6 +52,7 @@ def scrape_shopify(config):
                 "in_stock": variant.get("available"),
                 "product_url": f"{domain}/products/{p.get('handle')}",
                 "image_url": image,
+                "color": extract_color(p, variant),
                 "currency": config.get("currency", "USD"),
                 "site": site,
                 "category": config.get("category", "uncategorized"),
