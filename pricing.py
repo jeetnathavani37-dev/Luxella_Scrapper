@@ -19,6 +19,7 @@ CATEGORY_WEIGHTS = {
     "activewear": 0.5,
     "watches": 0.3,
     "sunglasses": 0.2,
+    "drinkware": 1.0,
     "uncategorized": 0.5,
 }
 DEFAULT_WEIGHT_KG = 0.5
