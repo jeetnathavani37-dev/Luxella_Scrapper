@@ -20,15 +20,16 @@ CATEGORY_WEIGHTS = {
     "watches": 0.3,
     "sunglasses": 0.2,
     "drinkware": 1.0,
+    "luggage": 4.0,
     "uncategorized": 0.5,
 }
 DEFAULT_WEIGHT_KG = 0.5
-DEFAULT_HANDBAG_WEIGHT_KG = 0.6
+DEFAULT_HANDBAG_WEIGHT_KG = 0.8
 
 HANDBAG_SUBTYPE_WEIGHTS = [
-    (["tote"], 2.0),
+    (["tote"], 1.2),
     (["crossbody", "cross body", "cross-body"], 1.0),
-    (["wallet", "card holder", "cardholder", "card case"], 0.5),
+    (["wallet", "card holder", "cardholder", "card case"], 0.8),
 ]
 
 HANDBAG_CATEGORIES = {"handbags", "bags", "bag/accessory"}
