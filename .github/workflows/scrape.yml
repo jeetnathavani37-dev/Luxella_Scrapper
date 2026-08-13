@@ -4,6 +4,11 @@ on:
   schedule:
     - cron: '0 */6 * * *'
   workflow_dispatch:
+    inputs:
+      only_site:
+        description: 'Sirf ye sites chalao (comma se separate, khaali chhodo = sab)'
+        required: false
+        default: ''
 
 jobs:
   scrape:
@@ -30,4 +35,5 @@ jobs:
           PROXY_SERVER: ${{ secrets.PROXY_SERVER }}
           PROXY_USERNAME: ${{ secrets.PROXY_USERNAME }}
           PROXY_PASSWORD: ${{ secrets.PROXY_PASSWORD }}
+          ONLY_SITE: ${{ github.event.inputs.only_site }}
         run: python main.py
