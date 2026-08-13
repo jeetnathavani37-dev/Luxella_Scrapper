@@ -17,7 +17,12 @@ def to_num(text):
 
 def click_load_more_and_scroll(page, load_more_selector, max_clicks=15):
     """Load More button ko baar baar click karta hai, warna scroll karta hai,
-    taaki poori category ke products load ho jaayein (lazy-loading sites ke liye)."""
+    taaki poori category ke products load ho jaayein (lazy-loading sites ke liye).
+
+    document.body kabhi kabhi null hota hai (page abhi poora load nahi hua,
+    ya proxy/Akamai ne khaali interstitial page bheja) — ab isse crash nahi
+    hota, scroll bas skip ho jaata hai.
+    """
     for _ in range(max_clicks):
         clicked = False
         if load_more_selector:
@@ -30,7 +35,18 @@ def click_load_more_and_scroll(page, load_more_selector, max_clicks=15):
             except Exception:
                 pass
         if not clicked:
-            page.evaluate("window.scrollBy(0, document.body.scrollHeight)")
+            try:
+                did_scroll = page.evaluate(
+                    "() => { if (document.body) { "
+                    "window.scrollBy(0, document.body.scrollHeight); return true; "
+                    "} return false; }"
+                )
+                if not did_scroll:
+                    # body hi nahi hai - is page pe aur scroll karna bekaar hai
+                    break
+            except Exception as e:
+                print(f"    [WARN] scroll failed: {e}")
+                break
             time.sleep(1.2)
     time.sleep(2)
 
@@ -86,14 +102,26 @@ def scrape_site(page, config):
     """Ek site ke saare start_urls scrape karta hai, poori product list return karta hai."""
     all_products = []
     for url in config["start_urls"]:
-        page.goto(url, wait_until="networkidle", timeout=60000)
+        try:
+            response = page.goto(url, wait_until="networkidle", timeout=60000)
+        except Exception as e:
+            print(f"  [ERROR] goto failed for {url}: {e}")
+            continue
+
+        # Diagnostic: pata karo actually kis page pe pahunche (redirect / block / interstitial)
+        final_url = page.url
+        status = response.status if response else None
+        title = page.title()
+        if final_url != url or (status and status >= 400):
+            print(f"  [DEBUG] requested: {url}")
+            print(f"  [DEBUG] landed on: {final_url} (status={status}, title='{title}')")
+
         click_load_more_and_scroll(page, config.get("load_more_selector"))
         products = extract_products(page, config)
 
         if len(products) == 0:
-            title = page.title()
             tile_count = len(page.query_selector_all(config["tile_selector"]))
-            body_snippet = page.inner_text("body")[:200].replace("\n", " ")
+            body_snippet = page.inner_text("body")[:200].replace("\n", " ") if page.query_selector("body") else "(no body found)"
             print(f"  [DEBUG] page title: {title}")
             print(f"  [DEBUG] tile_selector matches: {tile_count}")
             print(f"  [DEBUG] body text starts with: {body_snippet}")
