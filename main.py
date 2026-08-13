@@ -6,8 +6,9 @@ Local test ke liye:
     playwright install chromium
     python main.py
 
-Sirf ek site test karni ho:
+Sirf kuch sites test karni ho (comma se separate karo):
     ONLY_SITE=michaelkors python main.py
+    ONLY_SITE=michaelkors,coach python main.py
 
 Proxy (Webshare rotating residential) ke liye ye GitHub Secrets chahiye:
     PROXY_SERVER    = http://p.webshare.io:80
@@ -35,7 +36,6 @@ def build_proxy_username(base_username, country):
     if not base_username:
         return base_username
 
-    # existing -xx-N suffix strip karo
     base = re.sub(r"-[a-z]{2}-\d+$", "", base_username.strip())
 
     if not country:
@@ -85,18 +85,24 @@ def build_browser_context(playwright, config):
 def run():
     summary = {"new": 0, "changed": 0, "unchanged": 0, "errors": 0}
 
-    only_site = os.environ.get("ONLY_SITE")
-    sites = [s for s in SITES if s["name"] == only_site] if only_site else SITES
-    if only_site and not sites:
-        print(f"[ERROR] ONLY_SITE='{only_site}' sites.py me nahi mila")
-        return
+    only_site_raw = os.environ.get("ONLY_SITE", "").strip()
+    if only_site_raw:
+        wanted = {s.strip() for s in only_site_raw.split(",") if s.strip()}
+        sites = [s for s in SITES if s["name"] in wanted]
+        missing = wanted - {s["name"] for s in sites}
+        if missing:
+            print(f"[WARNING] sites.py me nahi mile: {', '.join(missing)}")
+        if not sites:
+            print(f"[ERROR] ONLY_SITE='{only_site_raw}' - koi bhi site sites.py me nahi mili")
+            return
+    else:
+        sites = SITES
 
     with sync_playwright() as p:
         for config in sites:
             print(f"\n=== Scraping: {config['name']} ===")
             try:
                 if config.get("platform") == "shopify":
-                    # halka rasta - koi browser/proxy nahi chahiye
                     products = scrape_shopify(config)
                     print(f"  {config['domain']} -> {len(products)} products")
                 else:
