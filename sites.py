@@ -3,21 +3,19 @@ Har site ka scraping config yahan hai.
 Do type ke sites: browser-based (JS-heavy, jaise MK/Coach) aur
 shopify-based (halka, koi browser/proxy nahi chahiye).
 
-NOTE (2026-08-29): Ek Scrapling (plain HTTP, no real browser) test se
-laga tha ki MK/Coach bina proxy ke chal jaate hain - lekin actual
-production scraper Playwright se REAL Chromium browser chalata hai,
-aur Akamai us browser-fingerprint ko alag tarike se detect karke block
-kar deta hai (Coach ne 403 diya bina proxy ke, live run mein).
-Isliye needs_proxy wapas True kar diya gaya hai in dono ke liye.
-Scrapling ka plain-HTTP bypass sirf Scrapling se hi kaam karta hai,
-Playwright wale is scraper ke liye nahi.
+NOTE (2026-08-29): MK ka start_url purane wale pe wapas kar diya
+(/_/N-28ei wala) - naya URL (/women/handbags/) ke saath selector match
+nahi ho raha tha, 0 products aa rahe the. Coach abhi bhi status=407
+(proxy auth error) de raha hai - ye Webshare proxy credentials ka
+masla hai, Akamai ka nahi. PROXY_USERNAME/PROXY_PASSWORD secrets
+Webshare dashboard se dobara verify karne padenge.
 """
 
 SITES = [
     # Browser + Proxy required
     {
         "name": "michaelkors",
-        "start_urls": ["https://www.michaelkors.com/women/handbags/"],
+        "start_urls": ["https://www.michaelkors.com/women/handbags/_/N-28ei"],
         "needs_browser": True,
         "needs_proxy": True,
         "proxy_country": "us",
