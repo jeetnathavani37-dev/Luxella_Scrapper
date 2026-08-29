@@ -1,8 +1,9 @@
 """
 Har site ka scraping config yahan hai.
 Teen type ke sites: ScraperAPI-based (Akamai/PerimeterX-protected, jaise
-MK/Coach/StockX/GOAT), browser-based (agar future mein koi aur JS-heavy
-site add ho), aur shopify-based (halka, koi browser/proxy nahi chahiye).
+MK/Coach/StockX/GOAT/On), browser-based (agar future mein koi aur
+JS-heavy site add ho), aur shopify-based (halka, koi browser/proxy
+nahi chahiye).
 
 NOTE (2026-08-29): MK/Coach ke liye Playwright, patchright, proxy (with/
 without country) - sab try kiya, Akamai har baar 403 de raha tha (IP
@@ -17,6 +18,8 @@ ScraperAPI se 404 de raha tha - simpler category URL pe switch kar diya.
 StockX/GOAT bhi ScraperAPI se successfully fetch ho rahe hain (dono
 PerimeterX+Cloudflare use karte hain, StockX Akamai se bhi tough maana
 jata hai) - selectors actual HTML se reverse-engineer kiye.
+On (on.com) apna custom React platform hai, JS-heavy - render=true
+ke saath ScraperAPI se 18 products mile Cloud collection se.
 """
 
 SITES = [
@@ -63,6 +66,16 @@ SITES = [
         "name_selector": '[class*="GridCellProductInfo__Name"]',
         "price_selector": '[class*="GridCellProductInfo__Price-"]',
         "link_selector": 'a[href^="/sneakers/"]',
+        "currency": "USD",
+    },
+    {
+        "name": "on",
+        "start_urls": ["https://www.on.com/en-us/shop/mens/shoes/cloud"],
+        "use_scraperapi": True,
+        "tile_selector": '[class*="productCard"]',
+        "name_selector": '[class*="_title_"]',
+        "price_selector": '[class*="_price_"]',
+        "link_selector": "a[href]",
         "currency": "USD",
     },
 
