@@ -3,20 +3,23 @@ Har site ka scraping config yahan hai.
 Do type ke sites: browser-based (JS-heavy, jaise MK/Coach) aur
 shopify-based (halka, koi browser/proxy nahi chahiye).
 
-NOTE (2026-08-29): Scrapling stealthy_headers test se pata chala ki
-Michael Kors aur Coach dono bina proxy ke bhi accessible hain (GitHub
-Actions runner se, 58 sites test kiye, 55 clean nikle). Proxy hata diya
-gaya hai in dono ke liye - agar future mein Akamai firse block kare,
-needs_proxy wapas True kar dena.
+NOTE (2026-08-29): Ek Scrapling (plain HTTP, no real browser) test se
+laga tha ki MK/Coach bina proxy ke chal jaate hain - lekin actual
+production scraper Playwright se REAL Chromium browser chalata hai,
+aur Akamai us browser-fingerprint ko alag tarike se detect karke block
+kar deta hai (Coach ne 403 diya bina proxy ke, live run mein).
+Isliye needs_proxy wapas True kar diya gaya hai in dono ke liye.
+Scrapling ka plain-HTTP bypass sirf Scrapling se hi kaam karta hai,
+Playwright wale is scraper ke liye nahi.
 """
 
 SITES = [
-    # Browser required, proxy NOT required (confirmed via Scrapling test 2026-08-29)
+    # Browser + Proxy required
     {
         "name": "michaelkors",
         "start_urls": ["https://www.michaelkors.com/women/handbags/"],
         "needs_browser": True,
-        "needs_proxy": False,
+        "needs_proxy": True,
         "proxy_country": "us",
         "tile_selector": ".product-tile",
         "name_selector": '[class*="name"], [class*="title"], .pdp-link',
@@ -29,7 +32,7 @@ SITES = [
         "name": "coach",
         "start_urls": ["https://www.coach.com/shop/women/bestsellers"],
         "needs_browser": True,
-        "needs_proxy": False,
+        "needs_proxy": True,
         "proxy_country": "us",
         "tile_selector": ".product-tile",
         "name_selector": '[class*="name"], [class*="title"], .pdp-link',
