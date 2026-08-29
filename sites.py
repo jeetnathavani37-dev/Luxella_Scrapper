@@ -2,15 +2,21 @@
 Har site ka scraping config yahan hai.
 Do type ke sites: browser-based (JS-heavy, jaise MK/Coach) aur
 shopify-based (halka, koi browser/proxy nahi chahiye).
+
+NOTE (2026-08-29): Scrapling stealthy_headers test se pata chala ki
+Michael Kors aur Coach dono bina proxy ke bhi accessible hain (GitHub
+Actions runner se, 58 sites test kiye, 55 clean nikle). Proxy hata diya
+gaya hai in dono ke liye - agar future mein Akamai firse block kare,
+needs_proxy wapas True kar dena.
 """
 
 SITES = [
-    # Browser + Proxy required
+    # Browser required, proxy NOT required (confirmed via Scrapling test 2026-08-29)
     {
         "name": "michaelkors",
-        "start_urls": ["https://www.michaelkors.com/women/handbags/_/N-28ei"],
+        "start_urls": ["https://www.michaelkors.com/women/handbags/"],
         "needs_browser": True,
-        "needs_proxy": True,
+        "needs_proxy": False,
         "proxy_country": "us",
         "tile_selector": ".product-tile",
         "name_selector": '[class*="name"], [class*="title"], .pdp-link',
@@ -23,7 +29,7 @@ SITES = [
         "name": "coach",
         "start_urls": ["https://www.coach.com/shop/women/bestsellers"],
         "needs_browser": True,
-        "needs_proxy": True,
+        "needs_proxy": False,
         "proxy_country": "us",
         "tile_selector": ".product-tile",
         "name_selector": '[class*="name"], [class*="title"], .pdp-link',
