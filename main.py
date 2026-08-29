@@ -15,20 +15,20 @@ Proxy (Webshare rotating residential) ke liye ye GitHub Secrets chahiye:
     PROXY_USERNAME  = base username, bina country suffix ke (jaise: pkbqdwus)
     PROXY_PASSWORD  = proxy password
 
+MK/Coach (Akamai-protected) ke liye ye GitHub Secret chahiye:
+    SCRAPERAPI_KEY  = ScraperAPI dashboard se
+
 NOTE (2026-08-29): Proxy sites ke liye images/fonts/media block kar diye
 hain (sirf HTML/CSS/JS load hota hai) - isse proxy bandwidth ~70-80% tak
 bach jaati hai. Product image URLs HTML attributes (src) se hi milte hain,
 actual image bytes download karne ki zaroorat nahi thi scraping ke liye.
 
-NOTE (2026-08-29) #2: Playwright se patchright pe switch kiya - plain
-Playwright (chahe proxy + US IP ke saath bhi) Akamai ko 403 Access Denied
-de raha tha, kyunki Akamai IP se zyada browser-automation fingerprint
-(CDP signals, navigator.webdriver, canvas/font fingerprint) detect karta
-hai. patchright ek patched Chromium hai jo ye automation signals chupata
-hai deeper level pe. Isliye manual "--disable-blink-features" arg aur
-navigator.webdriver override script hata diya hai - patchright khud
-better tarike se handle karta hai, manual patch se conflict/redundancy
-ho sakti thi.
+NOTE (2026-08-29) #2: Playwright se patchright pe switch kiya tha, lekin
+Akamai ne patchright ko bhi 403 diya. Ab MK/Coach ScraperAPI (managed
+anti-bot service) use karte hain instead - "use_scraperapi": True config
+mein, dekho scraperapi_scraper.py. Proxy/browser wala code ab sirf
+future ke liye rakha hai agar koi aur JS-heavy non-Akamai site add karni
+ho (abhi koi site "needs_browser" use nahi kar rahi).
 """
 import os
 import re
@@ -37,6 +37,7 @@ from patchright.sync_api import sync_playwright
 from sites import SITES
 from extract import scrape_site
 from shopify_scraper import scrape_shopify
+from scraperapi_scraper import scrape_site_scraperapi
 from db import save_product
 
 
@@ -126,6 +127,8 @@ def run():
                 if config.get("platform") == "shopify":
                     products = scrape_shopify(config)
                     print(f"  {config['domain']} -> {len(products)} products")
+                elif config.get("use_scraperapi"):
+                    products = scrape_site_scraperapi(config)
                 else:
                     browser, context = build_browser_context(p, config)
                     page = context.new_page()
