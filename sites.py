@@ -1,9 +1,9 @@
 """
 Har site ka scraping config yahan hai.
 Teen type ke sites: ScraperAPI-based (Akamai/PerimeterX-protected, jaise
-MK/Coach/StockX/GOAT/On/Ulta/SecretSales), browser-based (agar future
-mein koi aur JS-heavy site add ho), aur shopify-based (halka, koi
-browser/proxy nahi chahiye).
+MK/Coach/StockX/GOAT/On/Ulta/SecretSales/Zappos), browser-based (agar
+future mein koi aur JS-heavy site add ho), aur shopify-based (halka,
+koi browser/proxy nahi chahiye).
 
 NOTE (2026-08-29): MK/Coach ke liye Playwright, patchright, proxy (with/
 without country) - sab try kiya, Akamai har baar 403 de raha tha (IP
@@ -27,6 +27,10 @@ ScraperAPI trial plan mein available nahi), upgrade ke baad try karna.
 SecretSales UK confirmed working (18 products, discounted designer
 goods - Coach, Gucci, Marc Jacobs). Gilt/Rue La La abhi kaam nahi
 karte (premium proxy tier + login-gated content, dono issues).
+Zappos confirmed working (108 products!) - JSON-LD structured data use
+karta hai ("use_jsonld": True), CSS selectors ki zaroorat nahi. Kohl's
+aur Hoka abhi kaam nahi karte (dono Akamai + premium proxy tier
+chahiye - Hoka Deckers ka SFCC platform hai, MK/Coach jaisa).
 """
 
 SITES = [
@@ -112,6 +116,15 @@ SITES = [
         "price_selector": ".text-sm.font-bold",
         "link_selector": "",
         "currency": "GBP",
+    },
+    # Zappos confirmed working (108 products via JSON-LD, no CSS selectors
+    # needed - clean structured data with brand+name+price+url per product).
+    {
+        "name": "zappos",
+        "start_urls": ["https://www.zappos.com/women-boots"],
+        "use_scraperapi": True,
+        "use_jsonld": True,
+        "currency": "USD",
     },
 
     # Handbags & Leather Goods
