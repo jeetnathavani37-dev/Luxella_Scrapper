@@ -1,29 +1,26 @@
 """
 Har site ka scraping config yahan hai.
-Teen type ke sites: ScraperAPI-based (Akamai-protected, jaise MK/Coach),
-browser-based (agar future mein koi aur JS-heavy site add ho), aur
-shopify-based (halka, koi browser/proxy nahi chahiye).
+Teen type ke sites: ScraperAPI-based (Akamai/PerimeterX-protected, jaise
+MK/Coach/StockX/GOAT), browser-based (agar future mein koi aur JS-heavy
+site add ho), aur shopify-based (halka, koi browser/proxy nahi chahiye).
 
 NOTE (2026-08-29): MK/Coach ke liye Playwright, patchright, proxy (with/
 without country) - sab try kiya, Akamai har baar 403 de raha tha (IP
 nahi, browser-automation fingerprint hi Akamai detect kar raha tha).
-Isliye ab ye dono ScraperAPI (managed anti-bot service) use karte hain
-- "use_scraperapi": True, tile/name/price/link selectors CSS syntax mein
+Isliye ab ye ScraperAPI (managed anti-bot service) use karte hain -
+"use_scraperapi": True, tile/name/price/link selectors CSS syntax mein
 hi hain (BeautifulSoup se parse hote hain, Playwright locators se nahi).
 Requires GitHub Secret: SCRAPERAPI_KEY
 
-Coach confirmed working (16 products, 2026-08-29). MK ka purana URL
-(/_/N-28ei) ScraperAPI se 404 de raha tha - simpler category URL pe
-switch kar diya.
-
-stockx_test / goat_test: exploratory entries - StockX PerimeterX+Cloudflare
-use karta hai (Akamai se bhi tough maana jata hai), selectors abhi guess
-hain (dono Next.js apps, hashed class names). Pehle dekhna hai ScraperAPI
-fetch hi kar pata hai ya nahi, phir selectors tune karenge.
+Coach confirmed working (16 products). MK ka purana URL (/_/N-28ei)
+ScraperAPI se 404 de raha tha - simpler category URL pe switch kar diya.
+StockX/GOAT bhi ScraperAPI se successfully fetch ho rahe hain (dono
+PerimeterX+Cloudflare use karte hain, StockX Akamai se bhi tough maana
+jata hai) - selectors actual HTML se reverse-engineer kiye.
 """
 
 SITES = [
-    # ScraperAPI required (Akamai-protected, DIY browser automation block ho jata tha)
+    # ScraperAPI required (Akamai/PerimeterX-protected, DIY browser automation block ho jata tha)
     {
         "name": "michaelkors",
         "start_urls": ["https://www.michaelkors.com/women/handbags/"],
@@ -44,26 +41,28 @@ SITES = [
         "link_selector": ".product-tile-image-link, a[href]",
         "currency": "USD",
     },
-    # TEST ENTRIES - StockX/GOAT selectors unknown yet, isliye pehle sirf
-    # fetch-success (blocked hota hai ya nahi) test karna hai
+    # StockX/GOAT confirmed working via ScraperAPI (2026-08-29) - both are
+    # PerimeterX/Cloudflare protected (StockX considered tougher than
+    # Akamai), but ScraperAPI fetches clean, real HTML for both. Selectors
+    # reverse-engineered from actual fetched HTML.
     {
-        "name": "stockx_test",
+        "name": "stockx",
         "start_urls": ["https://stockx.com/sneakers"],
         "use_scraperapi": True,
-        "tile_selector": "[class*='tile'], [class*='product'], [data-testid*='product']",
-        "name_selector": "[class*='name'], [class*='title']",
-        "price_selector": "[class*='price']",
-        "link_selector": "a[href]",
+        "tile_selector": '[data-testid="ProductTile"]',
+        "name_selector": '[data-testid="product-tile-title"]',
+        "price_selector": '[data-testid="product-tile-lowest-ask-amount"]',
+        "link_selector": 'a[data-testid="productTile-ProductSwitcherLink"]',
         "currency": "USD",
     },
     {
-        "name": "goat_test",
+        "name": "goat",
         "start_urls": ["https://www.goat.com/sneakers"],
         "use_scraperapi": True,
-        "tile_selector": "[class*='tile'], [class*='product'], [data-testid*='product']",
-        "name_selector": "[class*='name'], [class*='title']",
-        "price_selector": "[class*='price']",
-        "link_selector": "a[href]",
+        "tile_selector": '[class*="GridCellWrapper"]',
+        "name_selector": '[class*="GridCellProductInfo__Name"]',
+        "price_selector": '[class*="GridCellProductInfo__Price-"]',
+        "link_selector": 'a[href^="/sneakers/"]',
         "currency": "USD",
     },
 
