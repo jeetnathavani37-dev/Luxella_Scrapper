@@ -1,0 +1,1 @@
+test - checking write access after MCP connector install
