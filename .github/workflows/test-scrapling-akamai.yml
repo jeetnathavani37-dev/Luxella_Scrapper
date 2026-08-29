@@ -1,0 +1,38 @@
+name: Test Scrapling Akamai Bypass
+
+on:
+  workflow_dispatch:
+    inputs:
+      use_proxy_comparison:
+        description: "Also test with WEBSHARE_PROXY secret for comparison"
+        required: false
+        default: "false"
+
+jobs:
+  test-akamai-bypass:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repo
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install Scrapling
+        run: |
+          pip install "scrapling[fetchers]"
+          scrapling install
+
+      - name: Run Akamai bypass test
+        env:
+          WEBSHARE_PROXY: ${{ github.event.inputs.use_proxy_comparison == 'true' && secrets.WEBSHARE_PROXY || '' }}
+        run: python test_scrapling_akamai.py
+
+      - name: Upload results artifact
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: scrapling-akamai-test-results
+          path: scrapling_akamai_test_results.json
