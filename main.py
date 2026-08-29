@@ -14,6 +14,11 @@ Proxy (Webshare rotating residential) ke liye ye GitHub Secrets chahiye:
     PROXY_SERVER    = http://p.webshare.io:80
     PROXY_USERNAME  = base username, bina country suffix ke (jaise: pkbqdwus)
     PROXY_PASSWORD  = proxy password
+
+NOTE (2026-08-29): Proxy sites ke liye images/fonts/media block kar diye
+hain (sirf HTML/CSS/JS load hota hai) - isse proxy bandwidth ~70-80% tak
+bach jaati hai. Product image URLs HTML attributes (src) se hi milte hain,
+actual image bytes download karne ki zaroorat nahi thi scraping ke liye.
 """
 import os
 import re
@@ -44,11 +49,20 @@ def build_proxy_username(base_username, country):
     return f"{base}-{country.lower()}-1"
 
 
+def _block_heavy_resources(route):
+    """Images/fonts/media block karo - bandwidth bachane ke liye (sirf proxy sites pe use hota hai)."""
+    if route.request.resource_type in ("image", "media", "font"):
+        route.abort()
+    else:
+        route.continue_()
+
+
 def build_browser_context(playwright, config):
     """Agar site ko proxy chahiye to proxy ke saath browser banata hai, warna normal."""
     launch_args = {"headless": True}
+    needs_proxy = bool(config.get("needs_proxy"))
 
-    if config.get("needs_proxy"):
+    if needs_proxy:
         proxy_server = os.environ.get("PROXY_SERVER")
         proxy_user = os.environ.get("PROXY_USERNAME")
         proxy_pass = os.environ.get("PROXY_PASSWORD")
@@ -79,6 +93,11 @@ def build_browser_context(playwright, config):
     context.add_init_script(
         "Object.defineProperty(navigator, 'webdriver', {get: () => undefined});"
     )
+
+    # Sirf proxy wali sites ke liye images/fonts/media block karo (bandwidth save)
+    if needs_proxy:
+        context.route("**/*", _block_heavy_resources)
+
     return browser, context
 
 
