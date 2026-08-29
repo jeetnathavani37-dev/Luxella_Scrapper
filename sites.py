@@ -15,6 +15,11 @@ Requires GitHub Secret: SCRAPERAPI_KEY
 Coach confirmed working (16 products, 2026-08-29). MK ka purana URL
 (/_/N-28ei) ScraperAPI se 404 de raha tha - simpler category URL pe
 switch kar diya.
+
+stockx_test / goat_test: exploratory entries - StockX PerimeterX+Cloudflare
+use karta hai (Akamai se bhi tough maana jata hai), selectors abhi guess
+hain (dono Next.js apps, hashed class names). Pehle dekhna hai ScraperAPI
+fetch hi kar pata hai ya nahi, phir selectors tune karenge.
 """
 
 SITES = [
@@ -37,6 +42,28 @@ SITES = [
         "name_selector": '[class*="name"], [class*="title"], .pdp-link',
         "price_selector": '[class*="price"]',
         "link_selector": ".product-tile-image-link, a[href]",
+        "currency": "USD",
+    },
+    # TEST ENTRIES - StockX/GOAT selectors unknown yet, isliye pehle sirf
+    # fetch-success (blocked hota hai ya nahi) test karna hai
+    {
+        "name": "stockx_test",
+        "start_urls": ["https://stockx.com/sneakers"],
+        "use_scraperapi": True,
+        "tile_selector": "[class*='tile'], [class*='product'], [data-testid*='product']",
+        "name_selector": "[class*='name'], [class*='title']",
+        "price_selector": "[class*='price']",
+        "link_selector": "a[href]",
+        "currency": "USD",
+    },
+    {
+        "name": "goat_test",
+        "start_urls": ["https://www.goat.com/sneakers"],
+        "use_scraperapi": True,
+        "tile_selector": "[class*='tile'], [class*='product'], [data-testid*='product']",
+        "name_selector": "[class*='name'], [class*='title']",
+        "price_selector": "[class*='price']",
+        "link_selector": "a[href]",
         "currency": "USD",
     },
 
