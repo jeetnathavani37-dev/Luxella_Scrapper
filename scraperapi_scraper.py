@@ -19,6 +19,10 @@ interstitial page dete hain (real title milta hai, lekin body mein
 "We can't load this page right now" jaisa error) - ye intermittent
 hota hai, dobara try karne pe pass ho jata hai. Isliye ab automatic
 retry hai (0 products milne pe, max 2 extra retries).
+
+NOTE #2: Kuch sites (SecretSales) mein product tile khud hi <a> anchor
+tag hota hai, andar alag link element nahi hota - "link_selector": ""
+chhod sakte ho, code khud tile.get('href') pe fallback kar lega.
 """
 import os
 import re
@@ -73,12 +77,15 @@ def extract_products_from_html(html, base_url, config):
     for tile in tiles:
         name_el = tile.select_one(config["name_selector"])
         price_el = tile.select_one(config["price_selector"])
-        link_el = tile.select_one(config["link_selector"])
+        link_el = tile.select_one(config["link_selector"]) if config.get("link_selector") else None
         img_el = tile.select_one("img")
 
         name = name_el.get_text(strip=True) if name_el else None
         price_raw = price_el.get_text(strip=True) if price_el else None
         product_url = link_el.get("href") if link_el else None
+        if not product_url and tile.name == "a":
+            # tile khud hi anchor tag hai (jaise SecretSales)
+            product_url = tile.get("href")
         if product_url and product_url.startswith("/"):
             product_url = origin + product_url
 
