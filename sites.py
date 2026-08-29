@@ -1,9 +1,9 @@
 """
 Har site ka scraping config yahan hai.
 Teen type ke sites: ScraperAPI-based (Akamai/PerimeterX-protected, jaise
-MK/Coach/StockX/GOAT/On/Ulta), browser-based (agar future mein koi aur
-JS-heavy site add ho), aur shopify-based (halka, koi browser/proxy
-nahi chahiye).
+MK/Coach/StockX/GOAT/On/Ulta/SecretSales), browser-based (agar future
+mein koi aur JS-heavy site add ho), aur shopify-based (halka, koi
+browser/proxy nahi chahiye).
 
 NOTE (2026-08-29): MK/Coach ke liye Playwright, patchright, proxy (with/
 without country) - sab try kiya, Akamai har baar 403 de raha tha (IP
@@ -24,6 +24,9 @@ Ulta confirmed working (60 products) - kabhi kabhi soft-block deta hai,
 isliye scraperapi_scraper.py mein auto-retry add kiya. Sephora abhi
 kaam nahi karta - premium/ultra_premium proxy tier chahiye (current
 ScraperAPI trial plan mein available nahi), upgrade ke baad try karna.
+SecretSales UK confirmed working (18 products, discounted designer
+goods - Coach, Gucci, Marc Jacobs). Gilt/Rue La La abhi kaam nahi
+karte (premium proxy tier + login-gated content, dono issues).
 """
 
 SITES = [
@@ -96,6 +99,19 @@ SITES = [
         "price_selector": ".pal-c-ProductCardBody--price",
         "link_selector": "a[href]",
         "currency": "USD",
+    },
+    # SecretSales UK confirmed working (18 products, real designer discounts -
+    # Coach, Gucci, Marc Jacobs seen in test). Gilt aur Rue La La abhi kaam
+    # nahi kar rahe (premium proxy tier + login-gated, dono issues).
+    {
+        "name": "secretsales",
+        "start_urls": ["https://www.secretsales.com/"],
+        "use_scraperapi": True,
+        "tile_selector": '[class*="ProductCard-product-"]',
+        "name_selector": '[class*="ProductCard-productName-"]',
+        "price_selector": ".text-sm.font-bold",
+        "link_selector": "",
+        "currency": "GBP",
     },
 
     # Handbags & Leather Goods
