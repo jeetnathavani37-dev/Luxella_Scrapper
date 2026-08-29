@@ -1,7 +1,7 @@
 """
 Har site ka scraping config yahan hai.
 Teen type ke sites: ScraperAPI-based (Akamai/PerimeterX-protected, jaise
-MK/Coach/StockX/GOAT/On), browser-based (agar future mein koi aur
+MK/Coach/StockX/GOAT/On/Ulta), browser-based (agar future mein koi aur
 JS-heavy site add ho), aur shopify-based (halka, koi browser/proxy
 nahi chahiye).
 
@@ -20,6 +20,10 @@ PerimeterX+Cloudflare use karte hain, StockX Akamai se bhi tough maana
 jata hai) - selectors actual HTML se reverse-engineer kiye.
 On (on.com) apna custom React platform hai, JS-heavy - render=true
 ke saath ScraperAPI se 18 products mile Cloud collection se.
+Ulta confirmed working (60 products) - kabhi kabhi soft-block deta hai,
+isliye scraperapi_scraper.py mein auto-retry add kiya. Sephora abhi
+kaam nahi karta - premium/ultra_premium proxy tier chahiye (current
+ScraperAPI trial plan mein available nahi), upgrade ke baad try karna.
 """
 
 SITES = [
@@ -75,6 +79,21 @@ SITES = [
         "tile_selector": '[class*="productCard"]',
         "name_selector": '[class*="_title_"]',
         "price_selector": '[class*="_price_"]',
+        "link_selector": "a[href]",
+        "currency": "USD",
+    },
+    # Ulta confirmed working (60 products) - kabhi kabhi soft-block/
+    # interstitial deta hai, scraperapi_scraper.py mein auto-retry hai
+    # isliye. Sephora abhi NAHI kaam kar raha - "premium"/"ultra_premium"
+    # proxy tier maangta hai jo current ScraperAPI trial plan mein nahi
+    # hai. Plan upgrade ke baad Sephora try karna.
+    {
+        "name": "ultabeauty",
+        "start_urls": ["https://www.ulta.com/shop/skin-care"],
+        "use_scraperapi": True,
+        "tile_selector": ".ProductCard",
+        "name_selector": ".pal-c-ProductCardBody--title",
+        "price_selector": ".pal-c-ProductCardBody--price",
         "link_selector": "a[href]",
         "currency": "USD",
     },
