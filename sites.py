@@ -1,41 +1,38 @@
 """
 Har site ka scraping config yahan hai.
-Do type ke sites: browser-based (JS-heavy, jaise MK/Coach) aur
+Teen type ke sites: ScraperAPI-based (Akamai-protected, jaise MK/Coach),
+browser-based (agar future mein koi aur JS-heavy site add ho), aur
 shopify-based (halka, koi browser/proxy nahi chahiye).
 
-NOTE (2026-08-29): Webshare subscription reactivate hui to Rotating
-Residential plan "Worldwide" hai (dashboard mein "Default User ·
-Worldwide · Rotating" dikha, koi country-specific option nahi). Purana
-code username mein "-us-1" suffix add karta tha (proxy_country="us"),
-jo naye plan ke saath invalid ban raha tha -> 407 Proxy Authentication
-error. proxy_country hata diya hai dono sites se taaki code sirf base
-username use kare, jo naye Worldwide plan ke saath match karta hai.
+NOTE (2026-08-29): MK/Coach ke liye Playwright, patchright, proxy (with/
+without country) - sab try kiya, Akamai har baar 403 de raha tha (IP
+nahi, browser-automation fingerprint hi Akamai detect kar raha tha).
+Isliye ab ye dono ScraperAPI (managed anti-bot service) use karte hain
+- "use_scraperapi": True, tile/name/price/link selectors CSS syntax mein
+hi hain (BeautifulSoup se parse hote hain, Playwright locators se nahi).
+Requires GitHub Secret: SCRAPERAPI_KEY
 """
 
 SITES = [
-    # Browser + Proxy required
+    # ScraperAPI required (Akamai-protected, DIY browser automation block ho jata tha)
     {
         "name": "michaelkors",
         "start_urls": ["https://www.michaelkors.com/women/handbags/_/N-28ei"],
-        "needs_browser": True,
-        "needs_proxy": True,
+        "use_scraperapi": True,
         "tile_selector": ".product-tile",
         "name_selector": '[class*="name"], [class*="title"], .pdp-link',
         "price_selector": '[class*="price"]',
         "link_selector": ".product-tile-image-link, a[href]",
-        "load_more_selector": '.show-more button, button[class*="load-more"], button[class*="show-more"]',
         "currency": "USD",
     },
     {
         "name": "coach",
         "start_urls": ["https://www.coach.com/shop/women/bestsellers"],
-        "needs_browser": True,
-        "needs_proxy": True,
+        "use_scraperapi": True,
         "tile_selector": ".product-tile",
         "name_selector": '[class*="name"], [class*="title"], .pdp-link',
         "price_selector": '[class*="price"]',
         "link_selector": ".product-tile-image-link, a[href]",
-        "load_more_selector": '.show-more button, button[class*="load-more"], button[class*="show-more"]',
         "currency": "USD",
     },
 
