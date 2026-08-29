@@ -3,12 +3,13 @@ Har site ka scraping config yahan hai.
 Do type ke sites: browser-based (JS-heavy, jaise MK/Coach) aur
 shopify-based (halka, koi browser/proxy nahi chahiye).
 
-NOTE (2026-08-29): MK ka start_url purane wale pe wapas kar diya
-(/_/N-28ei wala) - naya URL (/women/handbags/) ke saath selector match
-nahi ho raha tha, 0 products aa rahe the. Coach abhi bhi status=407
-(proxy auth error) de raha hai - ye Webshare proxy credentials ka
-masla hai, Akamai ka nahi. PROXY_USERNAME/PROXY_PASSWORD secrets
-Webshare dashboard se dobara verify karne padenge.
+NOTE (2026-08-29): Webshare subscription reactivate hui to Rotating
+Residential plan "Worldwide" hai (dashboard mein "Default User ·
+Worldwide · Rotating" dikha, koi country-specific option nahi). Purana
+code username mein "-us-1" suffix add karta tha (proxy_country="us"),
+jo naye plan ke saath invalid ban raha tha -> 407 Proxy Authentication
+error. proxy_country hata diya hai dono sites se taaki code sirf base
+username use kare, jo naye Worldwide plan ke saath match karta hai.
 """
 
 SITES = [
@@ -18,7 +19,6 @@ SITES = [
         "start_urls": ["https://www.michaelkors.com/women/handbags/_/N-28ei"],
         "needs_browser": True,
         "needs_proxy": True,
-        "proxy_country": "us",
         "tile_selector": ".product-tile",
         "name_selector": '[class*="name"], [class*="title"], .pdp-link',
         "price_selector": '[class*="price"]',
@@ -31,7 +31,6 @@ SITES = [
         "start_urls": ["https://www.coach.com/shop/women/bestsellers"],
         "needs_browser": True,
         "needs_proxy": True,
-        "proxy_country": "us",
         "tile_selector": ".product-tile",
         "name_selector": '[class*="name"], [class*="title"], .pdp-link',
         "price_selector": '[class*="price"]',
