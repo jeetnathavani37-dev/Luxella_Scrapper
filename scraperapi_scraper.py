@@ -23,9 +23,15 @@ retry hai (0 products milne pe, max 2 extra retries).
 NOTE #2: Kuch sites (SecretSales) mein product tile khud hi <a> anchor
 tag hota hai, andar alag link element nahi hota - "link_selector": ""
 chhod sakte ho, code khud tile.get('href') pe fallback kar lega.
+
+NOTE #3: Kuch sites (Zappos) apna product data schema.org JSON-LD
+<script type="application/ld+json"> blocks mein embed karte hain -
+CSS selectors ki zaroorat hi nahi. Config mein "use_jsonld": True
+set karo (tile/name/price/link selectors ki zaroorat nahi tab).
 """
 import os
 import re
+import json
 import time
 from datetime import datetime, timezone
 from urllib.parse import urlparse
@@ -62,6 +68,60 @@ def fetch_html(url, render=True, timeout=90):
     resp = requests.get(SCRAPERAPI_URL, params=params, timeout=timeout)
     resp.raise_for_status()
     return resp.text
+
+
+def extract_products_from_jsonld(html, base_url, config):
+    """Kuch sites (Zappos) apne product data ko schema.org JSON-LD
+    <script type="application/ld+json"> blocks mein embed karte hain -
+    CSS selectors ki zaroorat hi nahi, seedha structured data milta hai.
+    "use_jsonld": True set karo config mein isko use karne ke liye."""
+    soup = BeautifulSoup(html, "lxml")
+    parsed_base = urlparse(base_url)
+    origin = f"{parsed_base.scheme}://{parsed_base.netloc}"
+    results = []
+
+    for script in soup.find_all("script", type="application/ld+json"):
+        try:
+            data = json.loads(script.get_text())
+        except (json.JSONDecodeError, TypeError):
+            continue
+
+        items = data if isinstance(data, list) else [data]
+        for item in items:
+            if not isinstance(item, dict) or item.get("@type") != "Product":
+                continue
+
+            name = item.get("name")
+            brand = item.get("brand", {})
+            brand_name = brand.get("name") if isinstance(brand, dict) else brand
+            offers = item.get("offers", {})
+            if isinstance(offers, list):
+                offers = offers[0] if offers else {}
+            price = offers.get("price")
+            currency = offers.get("priceCurrency", config.get("currency", "USD"))
+            url = offers.get("url") or item.get("url")
+            if url and url.startswith("/"):
+                url = origin + url
+            image = item.get("image")
+            if isinstance(image, list):
+                image = image[0] if image else None
+            sku = item.get("sku") or item.get("productID")
+
+            full_name = f"{brand_name} {name}".strip() if brand_name else name
+            if not full_name:
+                continue
+
+            results.append({
+                "sku": sku,
+                "name": full_name,
+                "price": to_num(str(price)) if price else None,
+                "in_stock": True,
+                "product_url": url,
+                "image_url": image,
+                "currency": currency,
+            })
+
+    return results
 
 
 def extract_products_from_html(html, base_url, config):
@@ -135,7 +195,11 @@ def scrape_site_scraperapi(config):
                 print(f"  [ERROR] ScraperAPI fetch failed for {url} (attempt {attempt}): {e}")
                 continue
 
-            products = extract_products_from_html(html, url, config)
+            if config.get("use_jsonld"):
+                products = extract_products_from_jsonld(html, url, config)
+            else:
+                products = extract_products_from_html(html, url, config)
+
             if products:
                 break
 
@@ -145,11 +209,12 @@ def scrape_site_scraperapi(config):
 
         if len(products) == 0 and html:
             soup = BeautifulSoup(html, "lxml")
-            tile_count = len(soup.select(config["tile_selector"]))
             title = soup.title.get_text(strip=True) if soup.title else ""
             body_snippet = soup.get_text()[:200].replace("\n", " ")
             print(f"  [DEBUG] page title: {title}")
-            print(f"  [DEBUG] tile_selector matches: {tile_count}")
+            if not config.get("use_jsonld"):
+                tile_count = len(soup.select(config["tile_selector"]))
+                print(f"  [DEBUG] tile_selector matches: {tile_count}")
             print(f"  [DEBUG] body text starts with: {body_snippet}")
 
         for p in products:
