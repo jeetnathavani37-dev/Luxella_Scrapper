@@ -13,9 +13,16 @@ Usage in sites.py: config mein "use_scraperapi": True daalo, baaki
 selectors (tile_selector, name_selector, etc.) same tarah kaam karte
 hain jaise Playwright wale extract.py mein - bas CSS selectors hain,
 engine badla hai, selector syntax nahi.
+
+NOTE (2026-08-29): Ulta jaise sites kabhi kabhi ek "soft block" /
+interstitial page dete hain (real title milta hai, lekin body mein
+"We can't load this page right now" jaisa error) - ye intermittent
+hota hai, dobara try karne pe pass ho jata hai. Isliye ab automatic
+retry hai (0 products milne pe, max 2 extra retries).
 """
 import os
 import re
+import time
 from datetime import datetime, timezone
 from urllib.parse import urlparse
 
@@ -23,6 +30,7 @@ import requests
 from bs4 import BeautifulSoup
 
 SCRAPERAPI_URL = "https://api.scraperapi.com/"
+MAX_RETRIES = 3  # pehli try + 2 retries
 
 
 def to_num(text):
@@ -105,18 +113,30 @@ def extract_products_from_html(html, base_url, config):
 
 
 def scrape_site_scraperapi(config):
-    """Config ke start_urls ScraperAPI ke through scrape karta hai."""
+    """Config ke start_urls ScraperAPI ke through scrape karta hai.
+    0 products milne pe (soft-block / interstitial page ho sakta hai)
+    kuch retries karta hai."""
     all_products = []
     for url in config["start_urls"]:
-        try:
-            html = fetch_html(url, render=True)
-        except Exception as e:
-            print(f"  [ERROR] ScraperAPI fetch failed for {url}: {e}")
-            continue
+        html = None
+        products = []
 
-        products = extract_products_from_html(html, url, config)
+        for attempt in range(1, MAX_RETRIES + 1):
+            try:
+                html = fetch_html(url, render=True)
+            except Exception as e:
+                print(f"  [ERROR] ScraperAPI fetch failed for {url} (attempt {attempt}): {e}")
+                continue
 
-        if len(products) == 0:
+            products = extract_products_from_html(html, url, config)
+            if products:
+                break
+
+            if attempt < MAX_RETRIES:
+                print(f"  [RETRY] 0 products on attempt {attempt} for {url}, retrying...")
+                time.sleep(2)
+
+        if len(products) == 0 and html:
             soup = BeautifulSoup(html, "lxml")
             tile_count = len(soup.select(config["tile_selector"]))
             title = soup.title.get_text(strip=True) if soup.title else ""
