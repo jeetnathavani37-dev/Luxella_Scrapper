@@ -2,9 +2,9 @@
 test_scrapling_akamai.py
 
 Tests whether Scrapling's stealthy_headers can bypass Akamai bot protection
-on Michael Kors and Coach Outlet WITHOUT a residential proxy — run from
-GitHub Actions to see if the runner IP gets blocked where a local/sandbox
-IP didn't.
+on major SFCC/Akamai-protected luxury brand sites WITHOUT a residential
+proxy — run from GitHub Actions to see if the runner IP gets blocked where
+a local/sandbox IP didn't.
 
 Usage:
     pip install "scrapling[fetchers]"
@@ -36,6 +36,11 @@ TARGETS = [
     },
     {"brand": "Coach Outlet", "label": "homepage", "url": "https://www.coachoutlet.com/"},
     {"brand": "Coach", "label": "homepage", "url": "https://www.coach.com/"},
+    {"brand": "Tory Burch", "label": "homepage", "url": "https://www.toryburch.com/"},
+    {"brand": "Tory Burch", "label": "category_page", "url": "https://www.toryburch.com/en-us/handbags/"},
+    {"brand": "Christian Louboutin", "label": "homepage", "url": "https://us.christianlouboutin.com/"},
+    {"brand": "Christian Louboutin", "label": "category_page", "url": "https://us.christianlouboutin.com/us_en/shoes/women"},
+    {"brand": "Garmin", "label": "homepage", "url": "https://www.garmin.com/en-US/"},
 ]
 
 
@@ -49,8 +54,11 @@ def run_test(target, proxy=None):
         page = Fetcher.get(target["url"], **kwargs)
         elapsed = round(time.time() - t0, 2)
         body_len = len(page.body or b"")
+        # crude signal check: Akamai block pages are usually tiny or contain
+        # specific markers; real pages are large
         looks_blocked = body_len < 5000 or page.status in (403, 429, 999)
 
+        # for the product grid endpoint, also check we got real product data
         product_count = None
         if target["label"] == "product_grid_api" and page.status == 200:
             names = page.css(".product-name::text, .pdp-link a::text").getall()
@@ -104,7 +112,7 @@ def main():
     for target in TARGETS:
         r = run_test(target, proxy=None)
         print_result(r)
-        time.sleep(1)
+        time.sleep(1)  # be polite between requests
 
     proxy = os.environ.get("WEBSHARE_PROXY")
     if proxy:
@@ -125,7 +133,10 @@ def main():
     print("SUMMARY")
     print("=" * 70)
     no_proxy_results = [r for r in RESULTS if not r["proxy_used"]]
-    blocked_no_proxy = [r for r in no_proxy_results if r.get("looks_blocked") or r["status"] != 200]
+    blocked_no_proxy = [
+        r for r in no_proxy_results
+        if r.get("looks_blocked") or r["status"] != 200
+    ]
     print(f"No-proxy tests: {len(no_proxy_results)}")
     print(f"Blocked/failed without proxy: {len(blocked_no_proxy)}")
     if not blocked_no_proxy:
@@ -135,10 +146,12 @@ def main():
         for r in blocked_no_proxy:
             print(f"    - {r['brand']} / {r['label']}")
 
+    # dump full JSON for the workflow log / artifact
     print()
     print("--- FULL JSON RESULTS ---")
     print(json.dumps(RESULTS, indent=2))
 
+    # write to file too, so it can be uploaded as a GH Actions artifact
     with open("scrapling_akamai_test_results.json", "w") as f:
         json.dump(RESULTS, f, indent=2)
 
