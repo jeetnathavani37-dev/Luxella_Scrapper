@@ -11,13 +11,17 @@ Isliye ab ye dono ScraperAPI (managed anti-bot service) use karte hain
 - "use_scraperapi": True, tile/name/price/link selectors CSS syntax mein
 hi hain (BeautifulSoup se parse hote hain, Playwright locators se nahi).
 Requires GitHub Secret: SCRAPERAPI_KEY
+
+Coach confirmed working (16 products, 2026-08-29). MK ka purana URL
+(/_/N-28ei) ScraperAPI se 404 de raha tha - simpler category URL pe
+switch kar diya.
 """
 
 SITES = [
     # ScraperAPI required (Akamai-protected, DIY browser automation block ho jata tha)
     {
         "name": "michaelkors",
-        "start_urls": ["https://www.michaelkors.com/women/handbags/_/N-28ei"],
+        "start_urls": ["https://www.michaelkors.com/women/handbags/"],
         "use_scraperapi": True,
         "tile_selector": ".product-tile",
         "name_selector": '[class*="name"], [class*="title"], .pdp-link',
