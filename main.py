@@ -3,7 +3,7 @@ Entry point. Ye script GitHub Actions se har 6 ghante chalega.
 
 Local test ke liye:
     pip install -r requirements.txt
-    playwright install chromium
+    patchright install chromium
     python main.py
 
 Sirf kuch sites test karni ho (comma se separate karo):
@@ -19,10 +19,20 @@ NOTE (2026-08-29): Proxy sites ke liye images/fonts/media block kar diye
 hain (sirf HTML/CSS/JS load hota hai) - isse proxy bandwidth ~70-80% tak
 bach jaati hai. Product image URLs HTML attributes (src) se hi milte hain,
 actual image bytes download karne ki zaroorat nahi thi scraping ke liye.
+
+NOTE (2026-08-29) #2: Playwright se patchright pe switch kiya - plain
+Playwright (chahe proxy + US IP ke saath bhi) Akamai ko 403 Access Denied
+de raha tha, kyunki Akamai IP se zyada browser-automation fingerprint
+(CDP signals, navigator.webdriver, canvas/font fingerprint) detect karta
+hai. patchright ek patched Chromium hai jo ye automation signals chupata
+hai deeper level pe. Isliye manual "--disable-blink-features" arg aur
+navigator.webdriver override script hata diya hai - patchright khud
+better tarike se handle karta hai, manual patch se conflict/redundancy
+ho sakti thi.
 """
 import os
 import re
-from playwright.sync_api import sync_playwright
+from patchright.sync_api import sync_playwright
 
 from sites import SITES
 from extract import scrape_site
@@ -80,18 +90,10 @@ def build_browser_context(playwright, config):
             print(f"  [WARNING] {config['name']} ko proxy chahiye par PROXY_SERVER secret set nahi hai — "
                   f"is site pe block hone ka risk hai.")
 
-    launch_args["args"] = ["--disable-blink-features=AutomationControlled"]
-
     browser = playwright.chromium.launch(**launch_args)
     context = browser.new_context(
-        user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
-                   "(KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
         viewport={"width": 1366, "height": 900},
         locale="en-US",
-        extra_http_headers={"Accept-Language": "en-US,en;q=0.9"},
-    )
-    context.add_init_script(
-        "Object.defineProperty(navigator, 'webdriver', {get: () => undefined});"
     )
 
     # Sirf proxy wali sites ke liye images/fonts/media block karo (bandwidth save)
