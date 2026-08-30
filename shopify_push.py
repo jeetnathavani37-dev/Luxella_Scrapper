@@ -32,9 +32,15 @@ visit) - abhi sirf listing-page thumbnail milta hai.
 NOTE (2026-08-30) #4: User ne decide kiya ki products ab directly LIVE
 (status="active") jaayenge, draft mein nahi rukenge - pehle safety ke
 liye draft rakha tha. Naye pushes se ab active status set hota hai.
-Purane already-pushed (draft) products ko active karne ke liye
-shopify_publish.py (naya, alag script) use karo - wo existing pushed
-products ko batch mein draft->active karta hai.
+
+NOTE (2026-08-30) #5: BADA discovery - status="active" hone ke bawajood
+product Online Store par nahi dikhta jab tak wo kisi sales channel pe
+"published" na ho! "status" aur "published to Online Store channel"
+Shopify mein DO ALAG cheezein hain. Isliye "sirf 1 product website pe
+dikh raha tha" - wahi ek product pehle se publish tha, baaki sab active
+hote hue bhi published_at=null the. Fix: payload mein "published": true
+add kiya - isse Shopify product ko default/Online Store channel pe bhi
+publish kar deta hai (published_scope: "global").
 
 Requires GitHub Secrets:
     SHOPIFY_STORE_DOMAIN     = luxella-9299.myshopify.com
@@ -52,7 +58,8 @@ Behavior:
   liye zaroori hai)
 - 'pushed_to_shopify = false' wale products (jinke paas valid name +
   selling_price_inr hai) ko batch mein push karta hai
-- Har product 'active' status mein banta hai (LIVE, customers ko dikhega)
+- Har product 'active' status + 'published: true' ke saath banta hai
+  (LIVE, Online Store pe dikhega)
 - Poori image gallery bhejta hai (image_urls array agar available hai,
   warna image_url fallback)
 - Product create hone ke turant baad, actual stock quantity set karta
@@ -174,6 +181,7 @@ def build_shopify_payload(p):
             "product_type": category.title(),
             "tags": f"{brand}, {category}",
             "status": "active",
+            "published": True,
             "variants": [
                 {
                     "sku": sku,
@@ -247,7 +255,7 @@ def run():
     location_id = get_default_location_id(access_token)
     print(f"Default location: {location_id}")
 
-    print(f"{len(pending)} products push kar rahe hain Shopify pe (LIVE)...")
+    print(f"{len(pending)} products push kar rahe hain Shopify pe (LIVE + PUBLISHED)...")
 
     summary = {"pushed": 0, "errors": 0}
 
@@ -264,7 +272,8 @@ def run():
             mark_pushed(sb, p["id"], shopify_product, in_stock)
             summary["pushed"] += 1
             img_count = len(shopify_product.get("images", []))
-            print(f"  [OK] {p.get('name')} -> Shopify ID {shopify_product['id']} (stock: {quantity}, images: {img_count}, LIVE)")
+            published = shopify_product.get("published_at") is not None
+            print(f"  [OK] {p.get('name')} -> Shopify ID {shopify_product['id']} (stock: {quantity}, images: {img_count}, published: {published})")
         except Exception as e:
             summary["errors"] += 1
             print(f"  [ERROR] {p.get('name')}: {e}")
