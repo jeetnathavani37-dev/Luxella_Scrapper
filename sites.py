@@ -33,19 +33,20 @@ karta hai ("use_jsonld": True), CSS selectors ki zaroorat nahi. Kohl's
 aur Hoka abhi kaam nahi karte (dono Akamai + premium proxy tier
 chahiye - Hoka Deckers ka SFCC platform hai, MK/Coach jaisa).
 
-NOTE (2026-08-30): Sephora ko ScrapeGraphAI se try kiya - v1->v2 API
-migration issues fix karne ke baad bhi 0 products. Raw response se
-confirm hua ki ScrapeGraphAI ko sirf ~223-char chunk mila (real
-listing page hazaron characters ka hota hai) - matlab Sephora ne
-ScrapeGraphAI ka fetch bhi block kar diya, bilkul ScraperAPI jaisa hi.
-Confirmed: Sephora ko dono providers ke free/basic tier reject karte
-hain - site-specific limitation hai, provider ka nahi. Isliye ab
-"use_scrapegraph" try kar rahe hain Kohl's, Hoka, Gilt, Rue La La pe
-bhi (jo ScraperAPI se bhi fail ho rahe the) - dekhte hain koi inmein
-se ScrapeGraphAI ke fetcher se pass hoti hai ya nahi (alag anti-bot
-detection ho sakta hai har site ka). Requires GitHub Secret:
-SCRAPEGRAPH_API_KEY
+NOTE (2026-08-30): ScrapeGraphAI se pehla batch test (bina fetch_config
+ke) - Sephora/Gilt/Rue La La sab ~220-250 char "blocked" response de
+rahe the. Kohl's alag - 2412 chars real content mila par LLM ko
+products nahi dikhe (JS-rendered grid, static fetch mein empty tha).
+Hoka 502 diya (ScrapeGraphAI server issue, site-block nahi). Ab in
+sabke liye "fetch_config": {"mode": "js", "stealth": True, "wait": 2000}
+add kiya hai - JS rendering Kohl's ke liye, stealth mode Sephora/Gilt/
+Rue La La ke bot-detection bypass ke liye. NOTE: stealth mode ~5 extra
+credits/request leta hai. Requires GitHub Secret: SCRAPEGRAPH_API_KEY
 """
+
+# ScrapeGraphAI ke liye - JS-rendering + stealth mode, hard-to-scrape
+# sites ke liye jo normal fetch se block ho rahe the ya JS-heavy hain.
+STEALTH_FETCH_CONFIG = {"mode": "js", "stealth": True, "wait": 2000}
 
 SITES = [
     # ScraperAPI required (Akamai/PerimeterX-protected, DIY browser automation block ho jata tha)
@@ -140,38 +141,42 @@ SITES = [
     },
 
     # ScrapeGraphAI test batch (2026-08-30) - saari sites jo ScraperAPI
-    # ke free/trial tier se fail ho rahi thi (premium proxy tier chahiye
-    # tha). Sephora already confirmed NOT working (223-char blocked
-    # response). Kohl's/Hoka/Gilt/Rue La La abhi untested - alag anti-bot
-    # ho sakta hai har site ka. Requires GitHub Secret: SCRAPEGRAPH_API_KEY
+    # ke free/trial tier se fail ho rahi thi. Round 1 (bina fetch_config)
+    # sab fail hue - ab STEALTH_FETCH_CONFIG (JS render + stealth) ke
+    # saath round 2. Requires GitHub Secret: SCRAPEGRAPH_API_KEY
     {
         "name": "sephora",
         "start_urls": ["https://www.sephora.com/shop/skincare"],
         "use_scrapegraph": True,
+        "fetch_config": STEALTH_FETCH_CONFIG,
         "currency": "USD",
     },
     {
         "name": "kohls",
         "start_urls": ["https://www.kohls.com/catalog/handbags-accessories.jsp"],
         "use_scrapegraph": True,
+        "fetch_config": STEALTH_FETCH_CONFIG,
         "currency": "USD",
     },
     {
         "name": "hoka",
         "start_urls": ["https://www.hoka.com/en/us/womens-running-shoes/"],
         "use_scrapegraph": True,
+        "fetch_config": STEALTH_FETCH_CONFIG,
         "currency": "USD",
     },
     {
         "name": "gilt",
         "start_urls": ["https://www.gilt.com/sale/women/handbags"],
         "use_scrapegraph": True,
+        "fetch_config": STEALTH_FETCH_CONFIG,
         "currency": "USD",
     },
     {
         "name": "ruelala",
         "start_urls": ["https://www.ruelala.com/boutique/women"],
         "use_scrapegraph": True,
+        "fetch_config": STEALTH_FETCH_CONFIG,
         "currency": "USD",
     },
 
