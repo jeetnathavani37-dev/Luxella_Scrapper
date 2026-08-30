@@ -2,7 +2,16 @@
 USD/GBP price ko INR me convert karta hai, product ke naam/category se
 weight nikalta hai (isliye landed cost sahi bante hai), aur 25% margin
 laga ke selling price deta hai.
+
+NOTE (2026-08-30): selling_price_inr ab hamesha "...99" pe round hota
+hai (jaise 7872.12 -> 7899, 24900.50 -> 24999) - psychological/retail
+pricing standard. Formula: ceil(price/100)*100 - 1. Ye hamesha raw price
+ke bराबर ya thoda zyada hota hai (kabhi 1 rupee kam ho sakta hai agar
+price already exact hundred pe tha - negligible). price_inr aur
+landed_cost_inr (internal cost-tracking fields) waise hi rehte hain,
+sirf customer-facing selling_price_inr round hota hai.
 """
+import math
 
 CURRENCY_TO_INR = {
     "USD": 95.5,
@@ -48,6 +57,14 @@ def get_weight(category, name=None):
     return CATEGORY_WEIGHTS.get(category_l, DEFAULT_WEIGHT_KG)
 
 
+def round_to_99(value):
+    """Psychological pricing - hamesha '...99' pe round karta hai.
+    7872.12 -> 7899, 24900.50 -> 24999, 18900.00 -> 18899."""
+    if value is None:
+        return None
+    return math.ceil(value / 100) * 100 - 1
+
+
 def calculate_pricing(price, category, currency="USD", name=None):
     if price is None:
         return {"price_inr": None, "landed_cost_inr": None, "selling_price_inr": None}
@@ -57,7 +74,8 @@ def calculate_pricing(price, category, currency="USD", name=None):
 
     price_inr = round(price * rate, 2)
     landed_cost_inr = round((price * rate) + (weight_kg * SHIPPING_PER_KG), 2)
-    selling_price_inr = round(landed_cost_inr * (1 + MARGIN), 2)
+    raw_selling_price = landed_cost_inr * (1 + MARGIN)
+    selling_price_inr = round_to_99(raw_selling_price)
 
     return {
         "price_inr": price_inr,
