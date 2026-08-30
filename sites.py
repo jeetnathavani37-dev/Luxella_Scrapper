@@ -33,20 +33,25 @@ karta hai ("use_jsonld": True), CSS selectors ki zaroorat nahi. Kohl's
 aur Hoka abhi kaam nahi karte (dono Akamai + premium proxy tier
 chahiye - Hoka Deckers ka SFCC platform hai, MK/Coach jaisa).
 
-NOTE (2026-08-30): ScrapeGraphAI se pehla batch test (bina fetch_config
-ke) - Sephora/Gilt/Rue La La sab ~220-250 char "blocked" response de
-rahe the. Kohl's alag - 2412 chars real content mila par LLM ko
-products nahi dikhe (JS-rendered grid, static fetch mein empty tha).
-Hoka 502 diya (ScrapeGraphAI server issue, site-block nahi). Ab in
-sabke liye "fetch_config": {"mode": "js", "stealth": True, "wait": 2000}
-add kiya hai - JS rendering Kohl's ke liye, stealth mode Sephora/Gilt/
-Rue La La ke bot-detection bypass ke liye. NOTE: stealth mode ~5 extra
-credits/request leta hai. Requires GitHub Secret: SCRAPEGRAPH_API_KEY
+NOTE (2026-08-30): ScrapeGraphAI batch test round 2 (fetch_config
+mode=js, stealth=True, wait=2000) - Sephora WORKING (bot-detection
+bypass hua) but sirf 3 products mile (LLM ne poori page scroll nahi ki,
+sirf pehli screen ka content extract kiya). Kohl's - real content
+mila (5287 chars) par LLM ko products samajh nahi aaye. Hoka(502)/
+Gilt(404)/Rue La La(exception) - teeno ScrapeGraphAI backend ki
+transient instability lagti hai ek hi run mein (gilt.com khud up hai,
+verified) - retry-later cases, permanent block nahi.
+
+Round 3: STEALTH_FETCH_CONFIG mein "scrolls": 5 add kiya (poori page
+scroll karke saare lazy-loaded products load karne ke liye) +
+scrapegraph_scraper.py ka default prompt explicit kiya "extract EVERY
+product, be exhaustive" - Sephora ke count-issue ko fix karne ke liye.
+Requires GitHub Secret: SCRAPEGRAPH_API_KEY
 """
 
-# ScrapeGraphAI ke liye - JS-rendering + stealth mode, hard-to-scrape
-# sites ke liye jo normal fetch se block ho rahe the ya JS-heavy hain.
-STEALTH_FETCH_CONFIG = {"mode": "js", "stealth": True, "wait": 2000}
+# ScrapeGraphAI ke liye - JS-rendering + stealth mode + scrolling,
+# hard-to-scrape ya infinite-scroll/lazy-load sites ke liye.
+STEALTH_FETCH_CONFIG = {"mode": "js", "stealth": True, "wait": 2000, "scrolls": 5}
 
 SITES = [
     # ScraperAPI required (Akamai/PerimeterX-protected, DIY browser automation block ho jata tha)
@@ -141,9 +146,10 @@ SITES = [
     },
 
     # ScrapeGraphAI test batch (2026-08-30) - saari sites jo ScraperAPI
-    # ke free/trial tier se fail ho rahi thi. Round 1 (bina fetch_config)
-    # sab fail hue - ab STEALTH_FETCH_CONFIG (JS render + stealth) ke
-    # saath round 2. Requires GitHub Secret: SCRAPEGRAPH_API_KEY
+    # ke free/trial tier se fail ho rahi thi. Sephora confirmed working
+    # (round 2), Hoka/Gilt/Rue La La round 2 mein transient backend
+    # errors the (retrying round 3), Kohl's LLM-extraction issue.
+    # Requires GitHub Secret: SCRAPEGRAPH_API_KEY
     {
         "name": "sephora",
         "start_urls": ["https://www.sephora.com/shop/skincare"],
