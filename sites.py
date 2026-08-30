@@ -47,6 +47,14 @@ scroll karke saare lazy-loaded products load karne ke liye) +
 scrapegraph_scraper.py ka default prompt explicit kiya "extract EVERY
 product, be exhaustive" - Sephora ke count-issue ko fix karne ke liye.
 Requires GitHub Secret: SCRAPEGRAPH_API_KEY
+
+NOTE (2026-08-30) #2: MK/Coach/StockX/GOAT ab poori site cover karte
+hain - pehle sirf 1 category thi (jaise MK sirf handbags), ab har site
+ke start_urls mein multiple category pages hain (real URLs web-search
+se verify kiye, taaki 404 na aaye jaisa MK ke purane URL ke saath hua
+tha). Selectors same rakhe hain kyunki sab ek hi site platform ke
+alag-alag category pages hain, tile/name/price structure same rehta
+hai.
 """
 
 # ScrapeGraphAI ke liye - JS-rendering + stealth mode + scrolling,
@@ -55,9 +63,14 @@ STEALTH_FETCH_CONFIG = {"mode": "js", "stealth": True, "wait": 2000, "scrolls": 
 
 SITES = [
     # ScraperAPI required (Akamai/PerimeterX-protected, DIY browser automation block ho jata tha)
+    # Poori site cover: handbags, shoes, men's - 3 categories (2026-08-30)
     {
         "name": "michaelkors",
-        "start_urls": ["https://www.michaelkors.com/women/handbags/"],
+        "start_urls": [
+            "https://www.michaelkors.com/women/handbags/",
+            "https://www.michaelkors.com/women/shoes/",
+            "https://www.michaelkors.com/men/",
+        ],
         "use_scraperapi": True,
         "tile_selector": ".product-tile",
         "name_selector": '[class*="name"], [class*="title"], .pdp-link',
@@ -65,9 +78,14 @@ SITES = [
         "link_selector": ".product-tile-image-link, a[href]",
         "currency": "USD",
     },
+    # Poori site cover: women (all), handbags-specific, men's - 3 categories
     {
         "name": "coach",
-        "start_urls": ["https://www.coach.com/shop/women/bestsellers"],
+        "start_urls": [
+            "https://www.coach.com/shop/women/view-all",
+            "https://www.coach.com/shop/women/handbags/view-all",
+            "https://www.coach.com/shop/men/view-all",
+        ],
         "use_scraperapi": True,
         "tile_selector": ".product-tile",
         "name_selector": '[class*="name"], [class*="title"], .pdp-link',
@@ -79,9 +97,16 @@ SITES = [
     # PerimeterX/Cloudflare protected (StockX considered tougher than
     # Akamai), but ScraperAPI fetches clean, real HTML for both. Selectors
     # reverse-engineered from actual fetched HTML.
+    # Poori site cover: sneakers, handbags, watches, streetwear, accessories
     {
         "name": "stockx",
-        "start_urls": ["https://stockx.com/sneakers"],
+        "start_urls": [
+            "https://stockx.com/sneakers",
+            "https://stockx.com/handbags",
+            "https://stockx.com/watches",
+            "https://stockx.com/streetwear",
+            "https://stockx.com/category/accessories",
+        ],
         "use_scraperapi": True,
         "tile_selector": '[data-testid="ProductTile"]',
         "name_selector": '[data-testid="product-tile-title"]',
@@ -89,9 +114,15 @@ SITES = [
         "link_selector": 'a[data-testid="productTile-ProductSwitcherLink"]',
         "currency": "USD",
     },
+    # Poori site cover: sneakers, apparel, accessories, collectibles
     {
         "name": "goat",
-        "start_urls": ["https://www.goat.com/sneakers"],
+        "start_urls": [
+            "https://www.goat.com/sneakers",
+            "https://www.goat.com/apparel",
+            "https://www.goat.com/accessories",
+            "https://www.goat.com/collectibles",
+        ],
         "use_scraperapi": True,
         "tile_selector": '[class*="GridCellWrapper"]',
         "name_selector": '[class*="GridCellProductInfo__Name"]',
