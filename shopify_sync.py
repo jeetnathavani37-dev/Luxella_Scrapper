@@ -6,20 +6,19 @@ jo already push ho chuke hain (naye products create nahi karta - wo
 shopify_push.py karta hai).
 
 NOTE (2026-08-30): compare_at_price (MRP/anchor - crossed-out price)
-sync bhi add kiya - purane 1731+ products jo isके bina push hue the,
-ab is script se unko bhi compare_at_price mil jaayega.
+sync bhi add kiya - purane products ko bhi mil jaayega.
+
+NOTE (2026-08-30) #2: Location ID ab HARDCODE hai (87267410093) -
+pehle GET /locations.json se fetch karte the, jisko 'read_locations'
+scope chahiye tha jo humare app mein nahi tha (403 aa raha tha baar
+baar, scope add karne ki koshish bhi kaam nahi aayi). Fix: location ID
+ek baar Shopify MCP connector se nikaal ke hardcode kar diya - store
+mein sirf ek hi location hai (single-location business), isliye ye
+change hone ka risk nahi hai. Agar kabhi naya location add ho ya ye ID
+change ho, yahan manually update karna padega.
 
 Requires GitHub Secrets:
     SHOPIFY_STORE_DOMAIN, SHOPIFY_CLIENT_ID, SHOPIFY_CLIENT_SECRET
-
-Behavior:
-- 'pushed_to_shopify = true' wale products ko batch mein leta hai,
-  purane sync se pehle wale (shopify_synced_at ASC) - taaki sabka
-  turn aata rahe rotation mein
-- Price, stock, aur compare_at_price teeno ko current Supabase value
-  se last-known value se compare karta hai, jo bhi badla hai wahi
-  update karta hai Shopify pe (price+compare_at ek hi API call mein)
-- BATCH_SIZE se control - default 300
 
 Usage:
     BATCH_SIZE=300 python shopify_sync.py
@@ -33,6 +32,7 @@ from supabase import create_client
 BATCH_SIZE = int(os.environ.get("BATCH_SIZE", "300"))
 RATE_LIMIT_DELAY = 0.6
 API_VERSION = "2025-01"
+DEFAULT_LOCATION_ID = 87267410093  # Luxella store ka single location - hardcoded (read_locations scope avoid karne ke liye)
 
 
 def get_supabase():
@@ -69,16 +69,6 @@ def get_access_token():
 
 def get_shopify_base_url():
     return f"https://{get_shopify_domain()}/admin/api/{API_VERSION}"
-
-
-def get_default_location_id(access_token):
-    headers = {"X-Shopify-Access-Token": access_token}
-    resp = requests.get(f"{get_shopify_base_url()}/locations.json", headers=headers, timeout=30)
-    resp.raise_for_status()
-    locations = resp.json().get("locations", [])
-    if not locations:
-        raise RuntimeError("Store mein koi location nahi mili")
-    return locations[0]["id"]
 
 
 def fetch_synced_products(sb, limit):
@@ -139,8 +129,8 @@ def run():
 
     print("Access token generate kar rahe hain...")
     access_token = get_access_token()
-    location_id = get_default_location_id(access_token)
-    print(f"Token mil gaya. Location: {location_id}")
+    location_id = DEFAULT_LOCATION_ID
+    print(f"Token mil gaya. Location (hardcoded): {location_id}")
 
     print(f"{len(products)} products check kar rahe hain price/stock/MRP changes ke liye...")
 
