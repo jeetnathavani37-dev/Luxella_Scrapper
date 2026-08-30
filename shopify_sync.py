@@ -1,29 +1,25 @@
 """
 shopify_sync.py
 
-Un products ka price/stock Shopify pe UPDATE karta hai jo already push
-ho chuke hain (naye products create nahi karta - wo shopify_push.py
-karta hai). Ye har baar chalta hai to check karta hai: Supabase mein
-scraper ne price ya stock update kiya hai kya (jaise brand ne discount
-diya, ya product out-of-stock ho gaya) - agar haan, Shopify pe bhi
-update kar deta hai.
+Un products ka price/stock/compare-at-price Shopify pe UPDATE karta hai
+jo already push ho chuke hain (naye products create nahi karta - wo
+shopify_push.py karta hai).
+
+NOTE (2026-08-30): compare_at_price (MRP/anchor - crossed-out price)
+sync bhi add kiya - purane 1731+ products jo isके bina push hue the,
+ab is script se unko bhi compare_at_price mil jaayega.
 
 Requires GitHub Secrets:
     SHOPIFY_STORE_DOMAIN, SHOPIFY_CLIENT_ID, SHOPIFY_CLIENT_SECRET
-    (same jaise shopify_push.py)
 
 Behavior:
 - 'pushed_to_shopify = true' wale products ko batch mein leta hai,
   purane sync se pehle wale (shopify_synced_at ASC) - taaki sabka
   turn aata rahe rotation mein
-- Har product ke liye current Supabase price/stock ko last-known value
-  se compare karta hai:
-  - Agar price alag hai -> Shopify variant price update
-  - Agar stock (in/out) alag hai -> Shopify inventory_levels/set update
-  - Agar kuch nahi badla -> Shopify API call skip (credits/rate-limit
-    bachane ke liye), bas cursor (shopify_synced_at) update hota hai
-- BATCH_SIZE se control - default 300, taaki poora 16K+ catalog
-  rotate hoke roz cover ho jaaye agar din mein kai baar chale
+- Price, stock, aur compare_at_price teeno ko current Supabase value
+  se last-known value se compare karta hai, jo bhi badla hai wahi
+  update karta hai Shopify pe (price+compare_at ek hi API call mein)
+- BATCH_SIZE se control - default 300
 
 Usage:
     BATCH_SIZE=300 python shopify_sync.py
@@ -89,8 +85,9 @@ def fetch_synced_products(sb, limit):
     """Already-pushed products, sabse purane-synced pehle (rotation)."""
     resp = (
         sb.table("products")
-        .select("id,name,selling_price_inr,in_stock,shopify_variant_id,"
-                 "shopify_inventory_item_id,last_synced_price_inr,last_synced_in_stock")
+        .select("id,name,selling_price_inr,compare_at_price_inr,in_stock,shopify_variant_id,"
+                 "shopify_inventory_item_id,last_synced_price_inr,last_synced_compare_at_price_inr,"
+                 "last_synced_in_stock")
         .eq("pushed_to_shopify", True)
         .order("shopify_synced_at", desc=False, nullsfirst=True)
         .limit(limit)
@@ -99,12 +96,16 @@ def fetch_synced_products(sb, limit):
     return resp.data
 
 
-def update_price(access_token, variant_id, new_price):
+def update_variant(access_token, variant_id, price, compare_at_price):
+    """Price aur compare_at_price dono ek hi API call mein update karta hai."""
     headers = {
         "X-Shopify-Access-Token": access_token,
         "Content-Type": "application/json",
     }
-    payload = {"variant": {"id": variant_id, "price": str(new_price)}}
+    variant_payload = {"id": variant_id, "price": str(price)}
+    if compare_at_price:
+        variant_payload["compare_at_price"] = str(compare_at_price)
+    payload = {"variant": variant_payload}
     resp = requests.put(f"{get_shopify_base_url()}/variants/{variant_id}.json", headers=headers, json=payload, timeout=30)
     resp.raise_for_status()
 
@@ -119,9 +120,10 @@ def update_stock(access_token, location_id, inventory_item_id, quantity):
     resp.raise_for_status()
 
 
-def mark_synced(sb, product_id, price, in_stock):
+def mark_synced(sb, product_id, price, compare_at_price, in_stock):
     sb.table("products").update({
         "last_synced_price_inr": price,
+        "last_synced_compare_at_price_inr": compare_at_price,
         "last_synced_in_stock": in_stock,
         "shopify_synced_at": datetime.now(timezone.utc).isoformat(),
     }).eq("id", product_id).execute()
@@ -140,15 +142,18 @@ def run():
     location_id = get_default_location_id(access_token)
     print(f"Token mil gaya. Location: {location_id}")
 
-    print(f"{len(products)} products check kar rahe hain price/stock changes ke liye...")
+    print(f"{len(products)} products check kar rahe hain price/stock/MRP changes ke liye...")
 
     summary = {"price_updated": 0, "stock_updated": 0, "unchanged": 0, "errors": 0}
 
     for p in products:
         try:
             current_price = p.get("selling_price_inr")
+            current_compare_at = p.get("compare_at_price_inr")
             current_stock = bool(p.get("in_stock"))
+
             last_price = p.get("last_synced_price_inr")
+            last_compare_at = p.get("last_synced_compare_at_price_inr")
             last_stock = p.get("last_synced_in_stock")
 
             variant_id = p.get("shopify_variant_id")
@@ -156,7 +161,7 @@ def run():
 
             if not variant_id or not inventory_item_id:
                 print(f"  [SKIP] {p.get('name')}: variant/inventory ID missing (purana push, re-push zaroori hai)")
-                mark_synced(sb, p["id"], current_price, current_stock)
+                mark_synced(sb, p["id"], current_price, current_compare_at, current_stock)
                 continue
 
             changed = False
@@ -165,9 +170,14 @@ def run():
                 current_price is not None
                 and (last_price is None or float(current_price) != float(last_price))
             )
-            if price_changed:
-                update_price(access_token, variant_id, current_price)
-                print(f"  [PRICE] {p.get('name')}: {last_price} -> {current_price}")
+            compare_at_changed = (
+                current_compare_at is not None
+                and (last_compare_at is None or float(current_compare_at) != float(last_compare_at))
+            )
+            if price_changed or compare_at_changed:
+                update_variant(access_token, variant_id, current_price, current_compare_at)
+                print(f"  [PRICE] {p.get('name')}: price {last_price}->{current_price}, "
+                      f"MRP {last_compare_at}->{current_compare_at}")
                 summary["price_updated"] += 1
                 changed = True
                 time.sleep(RATE_LIMIT_DELAY)
@@ -184,7 +194,7 @@ def run():
             if not changed:
                 summary["unchanged"] += 1
 
-            mark_synced(sb, p["id"], current_price, current_stock)
+            mark_synced(sb, p["id"], current_price, current_compare_at, current_stock)
 
         except Exception as e:
             summary["errors"] += 1
