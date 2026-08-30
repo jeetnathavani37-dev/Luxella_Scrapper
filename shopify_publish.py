@@ -7,12 +7,22 @@ Shopify pe. shopify_push.py ab naye products directly 'active' banata
 hai, ye script sirf PURANE draft products ke liye ek-baar (ya jab tak
 sab clear na ho) chalana hai.
 
+NOTE (2026-08-30): Pehla version buggy tha - .neq("shopify_status",
+"active") filter SQL ke NULL-trap mein fasa: jin rows mein
+shopify_status column NULL tha (purane 1731 products, jo shopify_status
+column add hone SE PEHLE push hue the), unko neq() automatically skip
+kar deta hai (SQL mein "NULL != 'active'" ka result NULL hota hai, TRUE
+nahi - isliye row match hi nahi karti). Isliye "koi draft products nahi
+mile" wrongly print ho raha tha jabki 1731 draft products the. Fix:
+OR filter use kiya - shopify_status != 'active' YA shopify_status IS
+NULL, dono cases cover honi chahiye.
+
 Requires GitHub Secrets:
     SHOPIFY_STORE_DOMAIN, SHOPIFY_CLIENT_ID, SHOPIFY_CLIENT_SECRET
     (same jaise shopify_push.py)
 
 Behavior:
-- 'pushed_to_shopify = true' AND (shopify_status != 'active' ya null)
+- 'pushed_to_shopify = true' AND (shopify_status != 'active' YA NULL)
   wale products ko batch mein leta hai
 - Har ek ko Shopify pe PUT call se status='active' set karta hai
 - Supabase mein shopify_status='active' update karta hai (taaki dobara
@@ -68,12 +78,15 @@ def get_shopify_base_url():
 
 
 def fetch_draft_products(sb, limit):
+    """shopify_status != 'active' YA NULL - dono cases cover karta hai
+    (NULL wale purane products the, jo column add hone se pehle push
+    hue the)."""
     resp = (
         sb.table("products")
         .select("id,name,shopify_product_id,shopify_status")
         .eq("pushed_to_shopify", True)
         .not_.is_("shopify_product_id", "null")
-        .neq("shopify_status", "active")
+        .or_("shopify_status.neq.active,shopify_status.is.null")
         .limit(limit)
         .execute()
     )
