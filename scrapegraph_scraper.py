@@ -21,6 +21,15 @@ deta hai naye keys ke saath ("issued against the legacy v1 surface").
 v2 ka /api/extract endpoint synchronous hai (koi request_id polling
 nahi chahiye) - {status, data} shape mein response deta hai.
 
+NOTE (2026-08-30) #2: Sephora pe v2 se koi error nahi aata (auth theek
+hai), lekin 0 products milte hain - koi exception nahi, matlab response
+successfully aata hai par "products" key khaali/missing hoti hai (ya
+LLM ne response ko different shape mein return kiya, ya Sephora ka
+page hi properly load nahi hua ScrapeGraphAI ke fetcher se - JS-heavy
+React app hai). Isliye 0-products case mein ab raw response bhi print
+hota hai (RAW_RESPONSE_DEBUG env var se on/off) taaki pata chale
+response mein actually kya aa raha hai.
+
 NOTE: Ye scraperapi_scraper.py ka replacement nahi hai - MK/Coach jaise
 Akamai-protected sites ke liye ScraperAPI hi better hai (unka core
 business hi bot-detection bypass karna hai). ScrapeGraphAI zyada useful
@@ -30,6 +39,7 @@ site structure frequently change hoti hai - Akamai bypass ke liye nahi.
 import os
 import re
 import time
+import json
 from datetime import datetime, timezone
 
 import requests
@@ -71,8 +81,8 @@ def _headers():
 
 def fetch_products(url, prompt, timeout=120):
     """Ek page ko ScrapeGraphAI v2 /api/extract se extract karta hai,
-    raw 'data' dict return karta hai (jisme 'products' key honi chahiye).
-    v2 synchronous hai - ek hi request-response mein result mil jaata hai."""
+    poora response body return karta hai (debug ke liye) - caller
+    'data' key nikaal lega."""
     headers = _headers()
     payload = {"url": url, "prompt": prompt}
 
@@ -84,7 +94,7 @@ def fetch_products(url, prompt, timeout=120):
         error_msg = body.get("error", "unknown error")
         raise RuntimeError(f"ScrapeGraphAI extract error: {error_msg}")
 
-    return body.get("data", {})
+    return body
 
 
 def normalize_products(raw_data, config):
@@ -121,20 +131,25 @@ def normalize_products(raw_data, config):
 def scrape_site_scrapegraph(config):
     """Config ke start_urls ko ScrapeGraphAI v2 Extract se scrape karta
     hai. 0 products milne pe (jaise LLM ne page samjha nahi, ya soft
-    block) kuch retries karta hai - scraperapi_scraper.py jaisa hi pattern."""
+    block) kuch retries karta hai - scraperapi_scraper.py jaisa hi pattern.
+    0 products pe raw response bhi print karta hai debug ke liye."""
     prompt = config.get("scrape_prompt", DEFAULT_PROMPT)
     all_products = []
 
     for url in config["start_urls"]:
         products = []
+        last_body = None
 
         for attempt in range(1, MAX_RETRIES + 1):
             try:
-                raw_data = fetch_products(url, prompt)
+                body = fetch_products(url, prompt)
+                last_body = body
+                raw_data = body.get("data", {})
                 products = normalize_products(raw_data, config)
             except Exception as e:
                 print(f"  [ERROR] ScrapeGraphAI fetch failed for {url} (attempt {attempt}): {e}")
                 products = []
+                last_body = None
 
             if products:
                 break
@@ -145,6 +160,11 @@ def scrape_site_scrapegraph(config):
 
         if len(products) == 0:
             print(f"  [DEBUG] no products extracted from {url} after {MAX_RETRIES} attempts")
+            if last_body is not None:
+                dumped = json.dumps(last_body)[:1500]
+                print(f"  [DEBUG] last raw response (truncated to 1500 chars): {dumped}")
+            else:
+                print("  [DEBUG] last attempt raised an exception, no response body available")
 
         for p in products:
             p["site"] = config["name"]
