@@ -36,6 +36,7 @@ jobs:
           PROXY_USERNAME: ${{ secrets.PROXY_USERNAME }}
           PROXY_PASSWORD: ${{ secrets.PROXY_PASSWORD }}
           SCRAPERAPI_KEY: ${{ secrets.SCRAPERAPI_KEY }}
+          SCRAPEGRAPH_API_KEY: ${{ secrets.SCRAPEGRAPH_API_KEY }}
 
           ONLY_SITE: ${{ github.event.inputs.only_site }}
         run: python main.py
