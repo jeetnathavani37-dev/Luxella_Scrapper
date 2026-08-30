@@ -24,55 +24,31 @@ ke saath) - CREATE ke turant baad. Ye fix kar diya hai neeche.
 NOTE (2026-08-30) #3: Ab poori image gallery bhejte hain (Supabase ke
 'image_urls' array se, jo shopify_scraper.py Shopify-based brands ke
 liye already capture karta hai) - pehle sirf 'image_url' (1 image) bhejte
-the. Non-Shopify-sourced brands (MK/Coach/StockX/GOAT jaise ScraperAPI
-wale) ke paas abhi bhi sirf 1 image hai (image_urls null) - unke liye
-gallery lene ke liye alag, bada scraping kaam chahiye (per-product-page
-visit) - abhi sirf listing-page thumbnail milta hai.
+the.
 
 NOTE (2026-08-30) #4: User ne decide kiya ki products ab directly LIVE
-(status="active") jaayenge, draft mein nahi rukenge - pehle safety ke
-liye draft rakha tha. Naye pushes se ab active status set hota hai.
+(status="active") jaayenge, draft mein nahi rukenge.
 
-NOTE (2026-08-30) #5: BADA discovery - status="active" hone ke bawajood
-product Online Store par nahi dikhta jab tak wo kisi sales channel pe
-"published" na ho! "status" aur "published to Online Store channel"
-Shopify mein DO ALAG cheezein hain. Isliye "sirf 1 product website pe
-dikh raha tha" - wahi ek product pehle se publish tha, baaki sab active
-hote hue bhi published_at=null the. Fix: payload mein "published": true
-add kiya - isse Shopify product ko default/Online Store channel pe bhi
-publish kar deta hai (published_scope: "global").
+NOTE (2026-08-30) #5: status="active" hone ke bawajood product Online
+Store par nahi dikhta jab tak "published": true na ho - dono alag
+cheezein hain Shopify mein. Fix add kiya.
+
+NOTE (2026-08-30) #6: Ab REAL description (Supabase 'description' field,
+jo source site se scrape hoti hai) use karte hain, boilerplate text ki
+jagah - agar available hai. Aur Ab MULTIPLE SIZES support hai - agar
+product ke paas 'variants' array hai (2+ distinct sizes), Shopify pe
+"Size" option ke saath multi-variant product banta hai (customer size
+choose kar sakta hai), sirf ek size nahi. Har size variant ka apna price
+(same pricing formula se calculate hota hai) aur stock hota hai.
+NOTE: shopify_sync.py abhi bhi sirf PEHLE variant ka price/stock sync
+karta hai (multi-variant sync ek bada alag kaam hai, abhi scope se
+bahar) - baaki sizes creation ke time hi set ho jaate hain, baad mein
+automatically update nahi hote.
 
 Requires GitHub Secrets:
     SHOPIFY_STORE_DOMAIN     = luxella-9299.myshopify.com
     SHOPIFY_CLIENT_ID        = Dev Dashboard app ka Client ID
     SHOPIFY_CLIENT_SECRET    = Dev Dashboard app ka Client secret
-
-    (App banane ka process: dev.shopify.com/dashboard > Create app >
-    Admin API scopes: write_products, read_products > Install app on
-    store > API credentials tab se Client ID/Secret copy karo)
-
-Behavior:
-- Sabse pehle client_id + client_secret se ek fresh access token leta
-  hai (client credentials grant - POST /admin/oauth/access_token)
-- Store ki default location fetch karta hai (inventory set karne ke
-  liye zaroori hai)
-- 'pushed_to_shopify = false' wale products (jinke paas valid name +
-  selling_price_inr hai) ko batch mein push karta hai
-- Har product 'active' status + 'published: true' ke saath banta hai
-  (LIVE, Online Store pe dikhega)
-- Poori image gallery bhejta hai (image_urls array agar available hai,
-  warna image_url fallback)
-- Product create hone ke turant baad, actual stock quantity set karta
-  hai (inventory_levels/set) - kyunki create-time inventory_quantity
-  field Shopify ignore kar deta hai
-- Successfully push hone pe: pushed_to_shopify=true, shopify_product_id,
-  shopify_variant_id, shopify_inventory_item_id, shopify_status,
-  last_synced_price_inr, last_synced_in_stock, shopify_synced_at - sab
-  update karta hai
-- Shopify REST Admin API rate limit ~2 req/sec hai - isliye har call ke
-  beech chhota delay hai
-- BATCH_SIZE env var se control hota hai kitne products ek run mein
-  push honge (default 200)
 
 Usage:
     BATCH_SIZE=200 python shopify_push.py
@@ -83,6 +59,7 @@ import time
 import requests
 from datetime import datetime, timezone
 from supabase import create_client
+from pricing import calculate_pricing
 
 BATCH_SIZE = int(os.environ.get("BATCH_SIZE", "200"))
 RATE_LIMIT_DELAY = 0.6
@@ -128,8 +105,6 @@ def get_shopify_base_url():
 
 
 def get_default_location_id(access_token):
-    """Store ki pehli/default location ka ID leta hai - inventory set
-    karne ke liye zaroori hai."""
     headers = {"X-Shopify-Access-Token": access_token}
     resp = requests.get(f"{get_shopify_base_url()}/locations.json", headers=headers, timeout=30)
     resp.raise_for_status()
@@ -142,7 +117,8 @@ def get_default_location_id(access_token):
 def fetch_pending_products(sb, limit):
     resp = (
         sb.table("products")
-        .select("id,sku,name,brand,category,selling_price_inr,image_url,image_urls,in_stock,site")
+        .select("id,sku,name,brand,category,currency,selling_price_inr,image_url,"
+                 "image_urls,description,variants,in_stock,site")
         .eq("pushed_to_shopify", False)
         .not_.is_("selling_price_inr", "null")
         .not_.is_("name", "null")
@@ -154,13 +130,43 @@ def fetch_pending_products(sb, limit):
 
 
 def get_all_image_urls(p):
-    """image_urls (poori gallery) use karta hai agar available hai,
-    warna single image_url pe fallback karta hai."""
     urls = p.get("image_urls")
     if urls and isinstance(urls, list) and len(urls) > 0:
         return urls
     single = p.get("image_url")
     return [single] if single else []
+
+
+def get_size_variants(p):
+    """Distinct, valid size-variants nikalta hai (agar 2+ alag sizes
+    hain) - price ko selling-price formula se recalculate karta hai
+    (raw scraped price se, taaki margin consistent rahe)."""
+    raw_variants = p.get("variants")
+    if not raw_variants or not isinstance(raw_variants, list):
+        return []
+
+    category = p.get("category")
+    currency = p.get("currency", "USD")
+    name = p.get("name")
+
+    seen_sizes = set()
+    result = []
+    for v in raw_variants:
+        size = v.get("size")
+        if not size or size in seen_sizes:
+            continue
+        if v.get("price") is None:
+            continue
+        seen_sizes.add(size)
+        pricing = calculate_pricing(v["price"], category, currency, name=name)
+        result.append({
+            "size": size,
+            "sku": v.get("sku"),
+            "selling_price_inr": pricing["selling_price_inr"],
+            "in_stock": bool(v.get("in_stock")),
+        })
+
+    return result if len(result) > 1 else []
 
 
 def build_shopify_payload(p):
@@ -170,32 +176,54 @@ def build_shopify_payload(p):
     price = str(p.get("selling_price_inr") or "0")
     category = (p.get("category") or "uncategorized").strip()
     image_urls = get_all_image_urls(p)
+    description = p.get("description")
 
     title = f"{brand.title()} {name}".strip()[:255]
+    body_html = description if description else f"<p>{title}</p><p>Sourced via Luxella.</p>"
+
+    size_variants = get_size_variants(p)
+
+    if size_variants:
+        variants_payload = [
+            {
+                "option1": sv["size"],
+                "sku": sv["sku"] or f"LX-{p['id']}-{sv['size']}",
+                "price": str(sv["selling_price_inr"]),
+                "inventory_management": "shopify",
+                "inventory_policy": "deny",
+            }
+            for sv in size_variants
+        ]
+        options_payload = [{"name": "Size", "values": [sv["size"] for sv in size_variants]}]
+    else:
+        variants_payload = [
+            {
+                "sku": sku,
+                "price": price,
+                "inventory_management": "shopify",
+                "inventory_policy": "deny",
+            }
+        ]
+        options_payload = None
 
     payload = {
         "product": {
             "title": title,
-            "body_html": f"<p>{title}</p><p>Sourced via Luxella.</p>",
+            "body_html": body_html,
             "vendor": brand.title(),
             "product_type": category.title(),
             "tags": f"{brand}, {category}",
             "status": "active",
             "published": True,
-            "variants": [
-                {
-                    "sku": sku,
-                    "price": price,
-                    "inventory_management": "shopify",
-                    "inventory_policy": "deny",
-                }
-            ],
+            "variants": variants_payload,
         }
     }
+    if options_payload:
+        payload["product"]["options"] = options_payload
     if image_urls:
         payload["product"]["images"] = [{"src": url} for url in image_urls]
 
-    return payload
+    return payload, size_variants
 
 
 def create_shopify_product(payload, access_token):
@@ -209,9 +237,6 @@ def create_shopify_product(payload, access_token):
 
 
 def set_inventory(access_token, location_id, inventory_item_id, quantity):
-    """Naya product banne ke baad actual stock set karta hai -
-    create-time 'inventory_quantity' field Shopify ignore kar deta hai,
-    isliye ye alag call zaroori hai."""
     headers = {
         "X-Shopify-Access-Token": access_token,
         "Content-Type": "application/json",
@@ -226,6 +251,8 @@ def set_inventory(access_token, location_id, inventory_item_id, quantity):
 
 
 def mark_pushed(sb, product_id, shopify_product, in_stock):
+    """Sync-compat ke liye pehle variant ke IDs/price store karte hain
+    (shopify_sync.py abhi sirf single-variant sync support karta hai)."""
     variant = shopify_product["variants"][0]
     sb.table("products").update({
         "pushed_to_shopify": True,
@@ -257,23 +284,34 @@ def run():
 
     print(f"{len(pending)} products push kar rahe hain Shopify pe (LIVE + PUBLISHED)...")
 
-    summary = {"pushed": 0, "errors": 0}
+    summary = {"pushed": 0, "errors": 0, "multi_size": 0}
 
     for p in pending:
         try:
-            payload = build_shopify_payload(p)
+            payload, size_variants = build_shopify_payload(p)
             shopify_product = create_shopify_product(payload, access_token)
 
-            in_stock = bool(p.get("in_stock"))
-            quantity = 10 if in_stock else 0
-            variant = shopify_product["variants"][0]
-            set_inventory(access_token, location_id, variant["inventory_item_id"], quantity)
+            shopify_variants = shopify_product["variants"]
 
-            mark_pushed(sb, p["id"], shopify_product, in_stock)
+            if size_variants:
+                # har size variant ka apna stock set karo (order same rehta hai jo payload mein bheja tha)
+                for sv, shopify_v in zip(size_variants, shopify_variants):
+                    qty = 10 if sv["in_stock"] else 0
+                    set_inventory(access_token, location_id, shopify_v["inventory_item_id"], qty)
+                    time.sleep(RATE_LIMIT_DELAY)
+                summary["multi_size"] += 1
+                overall_in_stock = any(sv["in_stock"] for sv in size_variants)
+            else:
+                in_stock = bool(p.get("in_stock"))
+                quantity = 10 if in_stock else 0
+                set_inventory(access_token, location_id, shopify_variants[0]["inventory_item_id"], quantity)
+                overall_in_stock = in_stock
+
+            mark_pushed(sb, p["id"], shopify_product, overall_in_stock)
             summary["pushed"] += 1
             img_count = len(shopify_product.get("images", []))
-            published = shopify_product.get("published_at") is not None
-            print(f"  [OK] {p.get('name')} -> Shopify ID {shopify_product['id']} (stock: {quantity}, images: {img_count}, published: {published})")
+            size_info = f", sizes: {len(size_variants)}" if size_variants else ""
+            print(f"  [OK] {p.get('name')} -> Shopify ID {shopify_product['id']} (images: {img_count}{size_info})")
         except Exception as e:
             summary["errors"] += 1
             print(f"  [ERROR] {p.get('name')}: {e}")
