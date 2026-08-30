@@ -15,6 +15,11 @@ crossed-out "anchor" price dikhta hai (jaise ~~15000~~ 9699), discount
 ka feel dene ke liye. Supabase ke 'compare_at_price_inr' column se
 (higher-margin formula, pricing.py mein).
 
+NOTE (2026-08-30) #3: Location ID ab HARDCODE hai (87267410093) - pehle
+GET /locations.json se fetch karte the, jisko 'read_locations' scope
+chahiye tha jo humare app mein add hi nahi ho pa raha tha (baar baar
+403). Store mein sirf ek hi location hai, isliye hardcode safe hai.
+
 Requires GitHub Secrets:
     SHOPIFY_STORE_DOMAIN, SHOPIFY_CLIENT_ID, SHOPIFY_CLIENT_SECRET
 
@@ -32,6 +37,7 @@ from pricing import calculate_pricing
 BATCH_SIZE = int(os.environ.get("BATCH_SIZE", "200"))
 RATE_LIMIT_DELAY = 0.6
 API_VERSION = "2025-01"
+DEFAULT_LOCATION_ID = 87267410093  # Luxella store ka single location - hardcoded
 
 
 def get_supabase():
@@ -70,16 +76,6 @@ def get_access_token():
 
 def get_shopify_base_url():
     return f"https://{get_shopify_domain()}/admin/api/{API_VERSION}"
-
-
-def get_default_location_id(access_token):
-    headers = {"X-Shopify-Access-Token": access_token}
-    resp = requests.get(f"{get_shopify_base_url()}/locations.json", headers=headers, timeout=30)
-    resp.raise_for_status()
-    locations = resp.json().get("locations", [])
-    if not locations:
-        raise RuntimeError("Store mein koi location nahi mili")
-    return locations[0]["id"]
 
 
 def fetch_pending_products(sb, limit):
@@ -248,8 +244,8 @@ def run():
     access_token = get_access_token()
     print("Token mil gaya.")
 
-    location_id = get_default_location_id(access_token)
-    print(f"Default location: {location_id}")
+    location_id = DEFAULT_LOCATION_ID
+    print(f"Default location (hardcoded): {location_id}")
 
     print(f"{len(pending)} products push kar rahe hain Shopify pe (LIVE + PUBLISHED)...")
 
