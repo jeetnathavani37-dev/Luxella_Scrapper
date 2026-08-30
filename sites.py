@@ -33,13 +33,18 @@ karta hai ("use_jsonld": True), CSS selectors ki zaroorat nahi. Kohl's
 aur Hoka abhi kaam nahi karte (dono Akamai + premium proxy tier
 chahiye - Hoka Deckers ka SFCC platform hai, MK/Coach jaisa).
 
-NOTE (2026-08-30): Sephora ko ScraperAPI ki jagah ScrapeGraphAI se try
-kar rahe hain (test) - "use_scrapegraph": True, koi CSS selectors nahi
-chahiye, bas prompt-based extraction. Alag provider hai apna khud ka
-anti-bot/proxy handling ke saath, isliye ScraperAPI ke premium-tier
-requirement se bypass ho sakta hai. Requires GitHub Secret:
-SCRAPEGRAPH_API_KEY. Agar ye kaam kare, Gilt/Rue La La/Kohl's/Hoka pe
-bhi try kar sakte hain baad mein.
+NOTE (2026-08-30): Sephora ko ScrapeGraphAI se try kiya - v1->v2 API
+migration issues fix karne ke baad bhi 0 products. Raw response se
+confirm hua ki ScrapeGraphAI ko sirf ~223-char chunk mila (real
+listing page hazaron characters ka hota hai) - matlab Sephora ne
+ScrapeGraphAI ka fetch bhi block kar diya, bilkul ScraperAPI jaisa hi.
+Confirmed: Sephora ko dono providers ke free/basic tier reject karte
+hain - site-specific limitation hai, provider ka nahi. Isliye ab
+"use_scrapegraph" try kar rahe hain Kohl's, Hoka, Gilt, Rue La La pe
+bhi (jo ScraperAPI se bhi fail ho rahe the) - dekhte hain koi inmein
+se ScrapeGraphAI ke fetcher se pass hoti hai ya nahi (alag anti-bot
+detection ho sakta hai har site ka). Requires GitHub Secret:
+SCRAPEGRAPH_API_KEY
 """
 
 SITES = [
@@ -134,13 +139,38 @@ SITES = [
         "currency": "USD",
     },
 
-    # ScrapeGraphAI test (2026-08-30) - Sephora ScraperAPI ke free/trial
-    # tier se kaam nahi karta tha (premium proxy chahiye). Prompt-based
-    # extraction try kar rahe hain instead - koi CSS selectors nahi.
-    # Requires GitHub Secret: SCRAPEGRAPH_API_KEY
+    # ScrapeGraphAI test batch (2026-08-30) - saari sites jo ScraperAPI
+    # ke free/trial tier se fail ho rahi thi (premium proxy tier chahiye
+    # tha). Sephora already confirmed NOT working (223-char blocked
+    # response). Kohl's/Hoka/Gilt/Rue La La abhi untested - alag anti-bot
+    # ho sakta hai har site ka. Requires GitHub Secret: SCRAPEGRAPH_API_KEY
     {
         "name": "sephora",
         "start_urls": ["https://www.sephora.com/shop/skincare"],
+        "use_scrapegraph": True,
+        "currency": "USD",
+    },
+    {
+        "name": "kohls",
+        "start_urls": ["https://www.kohls.com/catalog/handbags-accessories.jsp"],
+        "use_scrapegraph": True,
+        "currency": "USD",
+    },
+    {
+        "name": "hoka",
+        "start_urls": ["https://www.hoka.com/en/us/womens-running-shoes/"],
+        "use_scrapegraph": True,
+        "currency": "USD",
+    },
+    {
+        "name": "gilt",
+        "start_urls": ["https://www.gilt.com/sale/women/handbags"],
+        "use_scrapegraph": True,
+        "currency": "USD",
+    },
+    {
+        "name": "ruelala",
+        "start_urls": ["https://www.ruelala.com/boutique/women"],
         "use_scrapegraph": True,
         "currency": "USD",
     },
