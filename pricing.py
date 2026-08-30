@@ -5,11 +5,15 @@ laga ke selling price deta hai.
 
 NOTE (2026-08-30): selling_price_inr ab hamesha "...99" pe round hota
 hai (jaise 7872.12 -> 7899, 24900.50 -> 24999) - psychological/retail
-pricing standard. Formula: ceil(price/100)*100 - 1. Ye hamesha raw price
-ke bराबर ya thoda zyada hota hai (kabhi 1 rupee kam ho sakta hai agar
-price already exact hundred pe tha - negligible). price_inr aur
-landed_cost_inr (internal cost-tracking fields) waise hi rehte hain,
-sirf customer-facing selling_price_inr round hota hai.
+pricing standard. Formula: ceil(price/100)*100 - 1.
+
+NOTE (2026-08-30) #2: compare_at_price_inr add kiya - ye "MRP"/anchor
+price hai jo Shopify pe crossed-out dikhta hai (jaise ~~15000~~ 9699,
+"discount" ka feel dene ke liye). India mein "MRP" term technically
+packaged-goods specific hai (Legal Metrology Act) - isliye Shopify ka
+"Compare at price" use kiya hai (same visual effect, bina literal MRP
+claim ke). Formula: higher margin (COMPARE_AT_MARGIN) pe based hai,
+selling price se hamesha zyada hota hai, ...99 pe round.
 """
 import math
 
@@ -19,6 +23,7 @@ CURRENCY_TO_INR = {
 }
 SHIPPING_PER_KG = 1250
 MARGIN = 0.25
+COMPARE_AT_MARGIN = 0.45  # "anchor" price ke liye - selling price se zyada dikhta hai
 
 CATEGORY_WEIGHTS = {
     "shoes": 2.0,
@@ -67,18 +72,28 @@ def round_to_99(value):
 
 def calculate_pricing(price, category, currency="USD", name=None):
     if price is None:
-        return {"price_inr": None, "landed_cost_inr": None, "selling_price_inr": None}
+        return {
+            "price_inr": None,
+            "landed_cost_inr": None,
+            "selling_price_inr": None,
+            "compare_at_price_inr": None,
+        }
 
     rate = CURRENCY_TO_INR.get(currency, CURRENCY_TO_INR["USD"])
     weight_kg = get_weight(category, name)
 
     price_inr = round(price * rate, 2)
     landed_cost_inr = round((price * rate) + (weight_kg * SHIPPING_PER_KG), 2)
+
     raw_selling_price = landed_cost_inr * (1 + MARGIN)
     selling_price_inr = round_to_99(raw_selling_price)
+
+    raw_compare_at = landed_cost_inr * (1 + COMPARE_AT_MARGIN)
+    compare_at_price_inr = round_to_99(raw_compare_at)
 
     return {
         "price_inr": price_inr,
         "landed_cost_inr": landed_cost_inr,
         "selling_price_inr": selling_price_inr,
+        "compare_at_price_inr": compare_at_price_inr,
     }
