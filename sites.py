@@ -3,7 +3,8 @@ Har site ka scraping config yahan hai.
 Teen type ke sites: ScraperAPI-based (Akamai/PerimeterX-protected, jaise
 MK/Coach/StockX/GOAT/On/Ulta/SecretSales/Zappos), browser-based (agar
 future mein koi aur JS-heavy site add ho), aur shopify-based (halka,
-koi browser/proxy nahi chahiye).
+koi browser/proxy nahi chahiye). Ab ScrapeGraphAI-based bhi (prompt-based
+extraction, CSS selectors ki zaroorat nahi) - "use_scrapegraph": True.
 
 NOTE (2026-08-29): MK/Coach ke liye Playwright, patchright, proxy (with/
 without country) - sab try kiya, Akamai har baar 403 de raha tha (IP
@@ -21,9 +22,9 @@ jata hai) - selectors actual HTML se reverse-engineer kiye.
 On (on.com) apna custom React platform hai, JS-heavy - render=true
 ke saath ScraperAPI se 18 products mile Cloud collection se.
 Ulta confirmed working (60 products) - kabhi kabhi soft-block deta hai,
-isliye scraperapi_scraper.py mein auto-retry add kiya. Sephora abhi
-kaam nahi karta - premium/ultra_premium proxy tier chahiye (current
-ScraperAPI trial plan mein available nahi), upgrade ke baad try karna.
+isliye scraperapi_scraper.py mein auto-retry add kiya. Sephora ScraperAPI
+se abhi kaam nahi karta tha - "premium"/"ultra_premium" proxy tier
+maangta hai jo current ScraperAPI trial plan mein nahi hai.
 SecretSales UK confirmed working (18 products, discounted designer
 goods - Coach, Gucci, Marc Jacobs). Gilt/Rue La La abhi kaam nahi
 karte (premium proxy tier + login-gated content, dono issues).
@@ -31,6 +32,14 @@ Zappos confirmed working (108 products!) - JSON-LD structured data use
 karta hai ("use_jsonld": True), CSS selectors ki zaroorat nahi. Kohl's
 aur Hoka abhi kaam nahi karte (dono Akamai + premium proxy tier
 chahiye - Hoka Deckers ka SFCC platform hai, MK/Coach jaisa).
+
+NOTE (2026-08-30): Sephora ko ScraperAPI ki jagah ScrapeGraphAI se try
+kar rahe hain (test) - "use_scrapegraph": True, koi CSS selectors nahi
+chahiye, bas prompt-based extraction. Alag provider hai apna khud ka
+anti-bot/proxy handling ke saath, isliye ScraperAPI ke premium-tier
+requirement se bypass ho sakta hai. Requires GitHub Secret:
+SCRAPEGRAPH_API_KEY. Agar ye kaam kare, Gilt/Rue La La/Kohl's/Hoka pe
+bhi try kar sakte hain baad mein.
 """
 
 SITES = [
@@ -91,9 +100,7 @@ SITES = [
     },
     # Ulta confirmed working (60 products) - kabhi kabhi soft-block/
     # interstitial deta hai, scraperapi_scraper.py mein auto-retry hai
-    # isliye. Sephora abhi NAHI kaam kar raha - "premium"/"ultra_premium"
-    # proxy tier maangta hai jo current ScraperAPI trial plan mein nahi
-    # hai. Plan upgrade ke baad Sephora try karna.
+    # isliye.
     {
         "name": "ultabeauty",
         "start_urls": ["https://www.ulta.com/shop/skin-care"],
@@ -124,6 +131,17 @@ SITES = [
         "start_urls": ["https://www.zappos.com/women-boots"],
         "use_scraperapi": True,
         "use_jsonld": True,
+        "currency": "USD",
+    },
+
+    # ScrapeGraphAI test (2026-08-30) - Sephora ScraperAPI ke free/trial
+    # tier se kaam nahi karta tha (premium proxy chahiye). Prompt-based
+    # extraction try kar rahe hain instead - koi CSS selectors nahi.
+    # Requires GitHub Secret: SCRAPEGRAPH_API_KEY
+    {
+        "name": "sephora",
+        "start_urls": ["https://www.sephora.com/shop/skincare"],
+        "use_scrapegraph": True,
         "currency": "USD",
     },
 
