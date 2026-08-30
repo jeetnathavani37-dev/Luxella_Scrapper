@@ -6,14 +6,26 @@ push karta hai - Shopify Admin API (REST) ke through, direct API calls
 (CSV import nahi - isliye ye fully automated/scheduled chal sakta hai,
 manual browser upload ki zaroorat nahi).
 
+NOTE (2026-08-30): Shopify ne 1 Jan 2026 se purana "reveal token once"
+custom-app flow retire kar diya. Ab Dev Dashboard se app banti hai,
+jisse sirf Client ID + Client Secret milte hain (koi static token nahi).
+Actual API access token in credentials se "client credentials grant"
+ke through generate hota hai - aur wo token sirf 24 ghante valid rehta
+hai. Isliye ye script har run mein fresh token khud generate karta hai
+(cache nahi karta - GitHub Actions runs already short-lived hain).
+
 Requires GitHub Secrets:
     SHOPIFY_STORE_DOMAIN     = luxella-9299.myshopify.com
-    SHOPIFY_ADMIN_API_TOKEN  = Custom app ka Admin API access token
-                                (Settings > Apps > Develop apps > create
-                                app > Admin API scopes: write_products,
-                                read_products > Install > reveal token)
+    SHOPIFY_CLIENT_ID        = Dev Dashboard app ka Client ID
+    SHOPIFY_CLIENT_SECRET    = Dev Dashboard app ka Client secret
+
+    (App banane ka process: dev.shopify.com/dashboard > Create app >
+    Admin API scopes: write_products, read_products > Install app on
+    store > API credentials tab se Client ID/Secret copy karo)
 
 Behavior:
+- Sabse pehle client_id + client_secret se ek fresh access token leta
+  hai (client credentials grant - POST /admin/oauth/access_token)
 - 'pushed_to_shopify = false' wale products (jinke paas valid name +
   selling_price_inr hai) ko batch mein push karta hai
 - Har product 'draft' status mein banta hai (safety - live nahi hota
@@ -40,6 +52,7 @@ from supabase import create_client
 
 BATCH_SIZE = int(os.environ.get("BATCH_SIZE", "200"))
 RATE_LIMIT_DELAY = 0.6  # seconds between calls, ~1.6 req/sec (Shopify allows ~2/sec)
+API_VERSION = "2025-01"
 
 
 def slugify(text, maxlen=60):
@@ -53,21 +66,40 @@ def get_supabase():
     return create_client(url, key)
 
 
-def get_shopify_headers():
-    token = os.environ.get("SHOPIFY_ADMIN_API_TOKEN")
-    if not token:
-        raise RuntimeError("SHOPIFY_ADMIN_API_TOKEN secret set nahi hai")
-    return {
-        "X-Shopify-Access-Token": token,
-        "Content-Type": "application/json",
-    }
-
-
-def get_shopify_base_url():
+def get_shopify_domain():
     domain = os.environ.get("SHOPIFY_STORE_DOMAIN")
     if not domain:
         raise RuntimeError("SHOPIFY_STORE_DOMAIN secret set nahi hai")
-    return f"https://{domain}/admin/api/2025-01"
+    return domain
+
+
+def get_access_token():
+    """Client credentials grant - Client ID + Secret se fresh access
+    token generate karta hai (24h valid, isliye har run mein naya
+    leta hai instead of storing/caching)."""
+    client_id = os.environ.get("SHOPIFY_CLIENT_ID")
+    client_secret = os.environ.get("SHOPIFY_CLIENT_SECRET")
+    if not client_id or not client_secret:
+        raise RuntimeError("SHOPIFY_CLIENT_ID / SHOPIFY_CLIENT_SECRET secrets set nahi hain")
+
+    domain = get_shopify_domain()
+    url = f"https://{domain}/admin/oauth/access_token"
+    payload = {
+        "client_id": client_id,
+        "client_secret": client_secret,
+        "grant_type": "client_credentials",
+    }
+    resp = requests.post(url, json=payload, timeout=30)
+    resp.raise_for_status()
+    token = resp.json().get("access_token")
+    if not token:
+        raise RuntimeError(f"Access token response mein nahi mila: {resp.json()}")
+    return token
+
+
+def get_shopify_base_url():
+    domain = get_shopify_domain()
+    return f"https://{domain}/admin/api/{API_VERSION}"
 
 
 def fetch_pending_products(sb, limit):
@@ -123,9 +155,12 @@ def build_shopify_payload(p):
     return payload
 
 
-def create_shopify_product(payload):
+def create_shopify_product(payload, access_token):
     base_url = get_shopify_base_url()
-    headers = get_shopify_headers()
+    headers = {
+        "X-Shopify-Access-Token": access_token,
+        "Content-Type": "application/json",
+    }
     resp = requests.post(f"{base_url}/products.json", headers=headers, json=payload, timeout=30)
     resp.raise_for_status()
     return resp.json()["product"]
@@ -147,6 +182,10 @@ def run():
         print("Koi pending products nahi hain push karne ke liye.")
         return
 
+    print("Access token generate kar rahe hain (client credentials grant)...")
+    access_token = get_access_token()
+    print("Token mil gaya.")
+
     print(f"{len(pending)} products push kar rahe hain Shopify pe...")
 
     summary = {"pushed": 0, "errors": 0}
@@ -154,7 +193,7 @@ def run():
     for p in pending:
         try:
             payload = build_shopify_payload(p)
-            shopify_product = create_shopify_product(payload)
+            shopify_product = create_shopify_product(payload, access_token)
             mark_pushed(sb, p["id"], shopify_product["id"])
             summary["pushed"] += 1
             print(f"  [OK] {p.get('name')} -> Shopify ID {shopify_product['id']}")
