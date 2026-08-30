@@ -1,0 +1,36 @@
+name: Push Products to Shopify
+
+on:
+  schedule:
+    - cron: '0 3,9,15,21 * * *'   # din mein 4 baar, product-scrape se offset
+  workflow_dispatch:
+    inputs:
+      batch_size:
+        description: 'Ek run mein kitne products push karne hain'
+        required: false
+        default: '200'
+
+jobs:
+  push:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install dependencies
+        run: pip install requests supabase
+
+      - name: Push products to Shopify
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}
+          SHOPIFY_STORE_DOMAIN: ${{ secrets.SHOPIFY_STORE_DOMAIN }}
+          SHOPIFY_ADMIN_API_TOKEN: ${{ secrets.SHOPIFY_ADMIN_API_TOKEN }}
+          BATCH_SIZE: ${{ github.event.inputs.batch_size || '200' }}
+        run: python shopify_push.py
