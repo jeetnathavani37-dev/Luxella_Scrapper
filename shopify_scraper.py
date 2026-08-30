@@ -1,6 +1,13 @@
 """
 Shopify stores ke liye halka scraper — koi browser ya proxy nahi chahiye.
 Shopify ka public /products.json endpoint use karta hai.
+
+NOTE (2026-08-30): Pehle sirf pehli image (p["images"][0]) le rahe the,
+baaki gallery images discard ho rahi thi - jabki Shopify ka /products.json
+response mein already SAARI images hoti hain (extra request ki zaroorat
+nahi thi). Ab poori gallery "image_urls" (list) mein save hoti hai,
+"image_url" primary/first image ke liye backward-compat ke liye rakha
+hai (purane code jo sirf ek image expect karte hain unke liye).
 """
 import requests
 from datetime import datetime, timezone
@@ -43,7 +50,10 @@ def scrape_shopify(config):
         for p in products:
             variants = p.get("variants", [])
             variant = variants[0] if variants else {}
-            image = p["images"][0]["src"] if p.get("images") else None
+
+            images = p.get("images", [])
+            image_urls = [img["src"] for img in images if img.get("src")]
+            primary_image = image_urls[0] if image_urls else None
 
             all_products.append({
                 "sku": variant.get("sku") or str(p.get("id")),
@@ -51,7 +61,8 @@ def scrape_shopify(config):
                 "price": float(variant["price"]) if variant.get("price") else None,
                 "in_stock": variant.get("available"),
                 "product_url": f"{domain}/products/{p.get('handle')}",
-                "image_url": image,
+                "image_url": primary_image,
+                "image_urls": image_urls,
                 "color": extract_color(p, variant),
                 "currency": config.get("currency", "USD"),
                 "site": site,
