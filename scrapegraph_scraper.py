@@ -1,7 +1,7 @@
 """
 scrapegraph_scraper.py
 
-ScrapeGraphAI ka SmartScraper endpoint use karta hai - CSS selectors ki
+ScrapeGraphAI ka v2 Extract endpoint use karta hai - CSS selectors ki
 jagah plain-English prompt se product data extract karta hai. Useful hai
 un sites ke liye jinka HTML structure baar baar badalta hai, ya jahan
 CSS selectors likhna/maintain karna painful ho - AI khud samajh ke
@@ -13,6 +13,13 @@ Usage in sites.py: config mein "use_scrapegraph": True daalo. Baaki
 CSS-selector wale keys (tile_selector, name_selector, etc.) yahan
 zaroori nahi hain - bas "start_urls" chahiye, aur optionally apna
 "scrape_prompt" (warna default e-commerce prompt use hoga).
+
+NOTE (2026-08-30): ScrapeGraphAI ne v1 API deprecate kar diya hai - naye
+API keys sirf v2 (v2-api.scrapegraphai.com) ke saath kaam karte hain,
+purana v1 endpoint (api.scrapegraphai.com/v1/...) 403 "auth_invalid_key"
+deta hai naye keys ke saath ("issued against the legacy v1 surface").
+v2 ka /api/extract endpoint synchronous hai (koi request_id polling
+nahi chahiye) - {status, data} shape mein response deta hai.
 
 NOTE: Ye scraperapi_scraper.py ka replacement nahi hai - MK/Coach jaise
 Akamai-protected sites ke liye ScraperAPI hi better hai (unka core
@@ -27,10 +34,8 @@ from datetime import datetime, timezone
 
 import requests
 
-SGAI_BASE_URL = "https://api.scrapegraphai.com/v1/smartscraper"
-MAX_RETRIES = 3       # pehli try + 2 retries agar 0 products mile
-POLL_INTERVAL = 3     # seconds, agar request turant complete na ho
-MAX_POLL_ATTEMPTS = 20  # ~60 seconds tak poll karega
+SGAI_EXTRACT_URL = "https://v2-api.scrapegraphai.com/api/extract"
+MAX_RETRIES = 3  # pehli try + 2 retries agar 0 products mile
 
 DEFAULT_PROMPT = (
     "Extract every product listed on this page. For each product return: "
@@ -64,48 +69,28 @@ def _headers():
     }
 
 
-def _poll_result(request_id, timeout_headers):
-    """Agar SmartScraper turant complete na ho ('pending'/'processing'),
-    to status endpoint poll karta hai jab tak result ya timeout na aaye."""
-    status_url = f"{SGAI_BASE_URL}/{request_id}"
-    for attempt in range(MAX_POLL_ATTEMPTS):
-        resp = requests.get(status_url, headers=timeout_headers, timeout=30)
-        resp.raise_for_status()
-        data = resp.json()
-        status = data.get("status")
-        if status == "completed":
-            return data
-        if status == "failed":
-            raise RuntimeError(f"SmartScraper request {request_id} failed: {data}")
-        time.sleep(POLL_INTERVAL)
-    raise TimeoutError(f"SmartScraper request {request_id} timed out after polling")
-
-
-def fetch_products(url, prompt, timeout=90):
-    """Ek page ko ScrapeGraphAI ke SmartScraper se extract karta hai,
-    raw 'result' dict return karta hai (jisme 'products' key honi chahiye)."""
+def fetch_products(url, prompt, timeout=120):
+    """Ek page ko ScrapeGraphAI v2 /api/extract se extract karta hai,
+    raw 'data' dict return karta hai (jisme 'products' key honi chahiye).
+    v2 synchronous hai - ek hi request-response mein result mil jaata hai."""
     headers = _headers()
-    payload = {"website_url": url, "user_prompt": prompt}
+    payload = {"url": url, "prompt": prompt}
 
-    resp = requests.post(SGAI_BASE_URL, headers=headers, json=payload, timeout=timeout)
+    resp = requests.post(SGAI_EXTRACT_URL, headers=headers, json=payload, timeout=timeout)
     resp.raise_for_status()
-    data = resp.json()
+    body = resp.json()
 
-    if data.get("status") == "completed":
-        return data.get("result", {})
+    if body.get("status") == "error":
+        error_msg = body.get("error", "unknown error")
+        raise RuntimeError(f"ScrapeGraphAI extract error: {error_msg}")
 
-    request_id = data.get("request_id")
-    if not request_id:
-        raise RuntimeError(f"Unexpected SmartScraper response (no request_id): {data}")
-
-    completed = _poll_result(request_id, headers)
-    return completed.get("result", {})
+    return body.get("data", {})
 
 
-def normalize_products(raw_result, config):
-    """SmartScraper ke JSON result ko baaki scrapers jaisa hi uniform
+def normalize_products(raw_data, config):
+    """v2 extract ke JSON result ko baaki scrapers jaisa hi uniform
     product-dict schema mein convert karta hai."""
-    raw_products = raw_result.get("products") if isinstance(raw_result, dict) else None
+    raw_products = raw_data.get("products") if isinstance(raw_data, dict) else None
     if not raw_products:
         return []
 
@@ -134,7 +119,7 @@ def normalize_products(raw_result, config):
 
 
 def scrape_site_scrapegraph(config):
-    """Config ke start_urls ko ScrapeGraphAI SmartScraper se scrape karta
+    """Config ke start_urls ko ScrapeGraphAI v2 Extract se scrape karta
     hai. 0 products milne pe (jaise LLM ne page samjha nahi, ya soft
     block) kuch retries karta hai - scraperapi_scraper.py jaisa hi pattern."""
     prompt = config.get("scrape_prompt", DEFAULT_PROMPT)
@@ -145,8 +130,8 @@ def scrape_site_scrapegraph(config):
 
         for attempt in range(1, MAX_RETRIES + 1):
             try:
-                raw_result = fetch_products(url, prompt)
-                products = normalize_products(raw_result, config)
+                raw_data = fetch_products(url, prompt)
+                products = normalize_products(raw_data, config)
             except Exception as e:
                 print(f"  [ERROR] ScrapeGraphAI fetch failed for {url} (attempt {attempt}): {e}")
                 products = []
