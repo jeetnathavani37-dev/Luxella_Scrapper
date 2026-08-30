@@ -21,6 +21,14 @@ kuch bhi ho. Sahi stock set karne ke liye alag se
 'inventory_levels/set' API call chahiye (location_id + inventory_item_id
 ke saath) - CREATE ke turant baad. Ye fix kar diya hai neeche.
 
+NOTE (2026-08-30) #3: Ab poori image gallery bhejte hain (Supabase ke
+'image_urls' array se, jo shopify_scraper.py Shopify-based brands ke
+liye already capture karta hai) - pehle sirf 'image_url' (1 image) bhejte
+the. Non-Shopify-sourced brands (MK/Coach/StockX/GOAT jaise ScraperAPI
+wale) ke paas abhi bhi sirf 1 image hai (image_urls null) - unke liye
+gallery lene ke liye alag, bada scraping kaam chahiye (per-product-page
+visit) - abhi sirf listing-page thumbnail milta hai.
+
 Requires GitHub Secrets:
     SHOPIFY_STORE_DOMAIN     = luxella-9299.myshopify.com
     SHOPIFY_CLIENT_ID        = Dev Dashboard app ka Client ID
@@ -39,6 +47,8 @@ Behavior:
   selling_price_inr hai) ko batch mein push karta hai
 - Har product 'draft' status mein banta hai (safety - live nahi hota
   jab tak manually Active na kiya jaaye Shopify admin se)
+- Poori image gallery bhejta hai (image_urls array agar available hai,
+  warna image_url fallback)
 - Product create hone ke turant baad, actual stock quantity set karta
   hai (inventory_levels/set) - kyunki create-time inventory_quantity
   field Shopify ignore kar deta hai
@@ -120,7 +130,7 @@ def get_default_location_id(access_token):
 def fetch_pending_products(sb, limit):
     resp = (
         sb.table("products")
-        .select("id,sku,name,brand,category,selling_price_inr,image_url,in_stock,site")
+        .select("id,sku,name,brand,category,selling_price_inr,image_url,image_urls,in_stock,site")
         .eq("pushed_to_shopify", False)
         .not_.is_("selling_price_inr", "null")
         .not_.is_("name", "null")
@@ -131,13 +141,23 @@ def fetch_pending_products(sb, limit):
     return resp.data
 
 
+def get_all_image_urls(p):
+    """image_urls (poori gallery) use karta hai agar available hai,
+    warna single image_url pe fallback karta hai."""
+    urls = p.get("image_urls")
+    if urls and isinstance(urls, list) and len(urls) > 0:
+        return urls
+    single = p.get("image_url")
+    return [single] if single else []
+
+
 def build_shopify_payload(p):
     name = (p.get("name") or "").strip()
     brand = (p.get("brand") or p.get("site") or "luxella").strip()
     sku = (p.get("sku") or "").strip() or f"LX-{p['id']}"
     price = str(p.get("selling_price_inr") or "0")
     category = (p.get("category") or "uncategorized").strip()
-    image_url = p.get("image_url")
+    image_urls = get_all_image_urls(p)
 
     title = f"{brand.title()} {name}".strip()[:255]
 
@@ -159,8 +179,8 @@ def build_shopify_payload(p):
             ],
         }
     }
-    if image_url:
-        payload["product"]["images"] = [{"src": image_url}]
+    if image_urls:
+        payload["product"]["images"] = [{"src": url} for url in image_urls]
 
     return payload
 
@@ -237,7 +257,8 @@ def run():
 
             mark_pushed(sb, p["id"], shopify_product, in_stock)
             summary["pushed"] += 1
-            print(f"  [OK] {p.get('name')} -> Shopify ID {shopify_product['id']} (stock: {quantity})")
+            img_count = len(shopify_product.get("images", []))
+            print(f"  [OK] {p.get('name')} -> Shopify ID {shopify_product['id']} (stock: {quantity}, images: {img_count})")
         except Exception as e:
             summary["errors"] += 1
             print(f"  [ERROR] {p.get('name')}: {e}")
