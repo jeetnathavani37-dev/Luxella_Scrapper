@@ -2,53 +2,21 @@
 shopify_push.py
 
 Supabase 'products' table se new products ko Shopify (Luxella store) mein
-push karta hai - Shopify Admin API (REST) ke through, direct API calls
-(CSV import nahi - isliye ye fully automated/scheduled chal sakta hai,
-manual browser upload ki zaroorat nahi).
+push karta hai - Shopify Admin API (REST) ke through.
 
-NOTE (2026-08-30): Shopify ne 1 Jan 2026 se purana "reveal token once"
-custom-app flow retire kar diya. Ab Dev Dashboard se app banti hai,
-jisse sirf Client ID + Client Secret milte hain (koi static token nahi).
-Actual API access token in credentials se "client credentials grant"
-ke through generate hota hai - aur wo token sirf 24 ghante valid rehta
-hai. Isliye ye script har run mein fresh token khud generate karta hai
-(cache nahi karta - GitHub Actions runs already short-lived hain).
+NOTE (2026-08-30): Client credentials grant (24h token), inventory
+alag call se set hoti hai (create-time field Shopify ignore karta hai),
+poori image gallery + real description + multi-size variants bhejte
+hain (agar available hain), status=active + published=true (Online
+Store pe live hone ke liye dono zaroori hain).
 
-NOTE (2026-08-30) #2: Discover kiya ki product-create ke time
-'variants[].inventory_quantity' field Shopify silently ignore kar deta
-hai - naya product hamesha 0 stock se banta hai, chahe payload mein
-kuch bhi ho. Sahi stock set karne ke liye alag se
-'inventory_levels/set' API call chahiye (location_id + inventory_item_id
-ke saath) - CREATE ke turant baad. Ye fix kar diya hai neeche.
-
-NOTE (2026-08-30) #3: Ab poori image gallery bhejte hain (Supabase ke
-'image_urls' array se, jo shopify_scraper.py Shopify-based brands ke
-liye already capture karta hai) - pehle sirf 'image_url' (1 image) bhejte
-the.
-
-NOTE (2026-08-30) #4: User ne decide kiya ki products ab directly LIVE
-(status="active") jaayenge, draft mein nahi rukenge.
-
-NOTE (2026-08-30) #5: status="active" hone ke bawajood product Online
-Store par nahi dikhta jab tak "published": true na ho - dono alag
-cheezein hain Shopify mein. Fix add kiya.
-
-NOTE (2026-08-30) #6: Ab REAL description (Supabase 'description' field,
-jo source site se scrape hoti hai) use karte hain, boilerplate text ki
-jagah - agar available hai. Aur Ab MULTIPLE SIZES support hai - agar
-product ke paas 'variants' array hai (2+ distinct sizes), Shopify pe
-"Size" option ke saath multi-variant product banta hai (customer size
-choose kar sakta hai), sirf ek size nahi. Har size variant ka apna price
-(same pricing formula se calculate hota hai) aur stock hota hai.
-NOTE: shopify_sync.py abhi bhi sirf PEHLE variant ka price/stock sync
-karta hai (multi-variant sync ek bada alag kaam hai, abhi scope se
-bahar) - baaki sizes creation ke time hi set ho jaate hain, baad mein
-automatically update nahi hote.
+NOTE (2026-08-30) #2: compare_at_price bhi bhejte hain ab - Shopify pe
+crossed-out "anchor" price dikhta hai (jaise ~~15000~~ 9699), discount
+ka feel dene ke liye. Supabase ke 'compare_at_price_inr' column se
+(higher-margin formula, pricing.py mein).
 
 Requires GitHub Secrets:
-    SHOPIFY_STORE_DOMAIN     = luxella-9299.myshopify.com
-    SHOPIFY_CLIENT_ID        = Dev Dashboard app ka Client ID
-    SHOPIFY_CLIENT_SECRET    = Dev Dashboard app ka Client secret
+    SHOPIFY_STORE_DOMAIN, SHOPIFY_CLIENT_ID, SHOPIFY_CLIENT_SECRET
 
 Usage:
     BATCH_SIZE=200 python shopify_push.py
@@ -117,8 +85,8 @@ def get_default_location_id(access_token):
 def fetch_pending_products(sb, limit):
     resp = (
         sb.table("products")
-        .select("id,sku,name,brand,category,currency,selling_price_inr,image_url,"
-                 "image_urls,description,variants,in_stock,site")
+        .select("id,sku,name,brand,category,currency,selling_price_inr,compare_at_price_inr,"
+                 "image_url,image_urls,description,variants,in_stock,site")
         .eq("pushed_to_shopify", False)
         .not_.is_("selling_price_inr", "null")
         .not_.is_("name", "null")
@@ -139,8 +107,7 @@ def get_all_image_urls(p):
 
 def get_size_variants(p):
     """Distinct, valid size-variants nikalta hai (agar 2+ alag sizes
-    hain) - price ko selling-price formula se recalculate karta hai
-    (raw scraped price se, taaki margin consistent rahe)."""
+    hain) - price + compare_at ko formula se recalculate karta hai."""
     raw_variants = p.get("variants")
     if not raw_variants or not isinstance(raw_variants, list):
         return []
@@ -163,6 +130,7 @@ def get_size_variants(p):
             "size": size,
             "sku": v.get("sku"),
             "selling_price_inr": pricing["selling_price_inr"],
+            "compare_at_price_inr": pricing["compare_at_price_inr"],
             "in_stock": bool(v.get("in_stock")),
         })
 
@@ -174,6 +142,7 @@ def build_shopify_payload(p):
     brand = (p.get("brand") or p.get("site") or "luxella").strip()
     sku = (p.get("sku") or "").strip() or f"LX-{p['id']}"
     price = str(p.get("selling_price_inr") or "0")
+    compare_at = p.get("compare_at_price_inr")
     category = (p.get("category") or "uncategorized").strip()
     image_urls = get_all_image_urls(p)
     description = p.get("description")
@@ -189,6 +158,7 @@ def build_shopify_payload(p):
                 "option1": sv["size"],
                 "sku": sv["sku"] or f"LX-{p['id']}-{sv['size']}",
                 "price": str(sv["selling_price_inr"]),
+                "compare_at_price": str(sv["compare_at_price_inr"]) if sv["compare_at_price_inr"] else None,
                 "inventory_management": "shopify",
                 "inventory_policy": "deny",
             }
@@ -200,6 +170,7 @@ def build_shopify_payload(p):
             {
                 "sku": sku,
                 "price": price,
+                "compare_at_price": str(compare_at) if compare_at else None,
                 "inventory_management": "shopify",
                 "inventory_policy": "deny",
             }
@@ -251,8 +222,6 @@ def set_inventory(access_token, location_id, inventory_item_id, quantity):
 
 
 def mark_pushed(sb, product_id, shopify_product, in_stock):
-    """Sync-compat ke liye pehle variant ke IDs/price store karte hain
-    (shopify_sync.py abhi sirf single-variant sync support karta hai)."""
     variant = shopify_product["variants"][0]
     sb.table("products").update({
         "pushed_to_shopify": True,
@@ -294,7 +263,6 @@ def run():
             shopify_variants = shopify_product["variants"]
 
             if size_variants:
-                # har size variant ka apna stock set karo (order same rehta hai jo payload mein bheja tha)
                 for sv, shopify_v in zip(size_variants, shopify_variants):
                     qty = 10 if sv["in_stock"] else 0
                     set_inventory(access_token, location_id, shopify_v["inventory_item_id"], qty)
