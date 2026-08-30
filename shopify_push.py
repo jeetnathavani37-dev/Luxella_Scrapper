@@ -29,6 +29,13 @@ wale) ke paas abhi bhi sirf 1 image hai (image_urls null) - unke liye
 gallery lene ke liye alag, bada scraping kaam chahiye (per-product-page
 visit) - abhi sirf listing-page thumbnail milta hai.
 
+NOTE (2026-08-30) #4: User ne decide kiya ki products ab directly LIVE
+(status="active") jaayenge, draft mein nahi rukenge - pehle safety ke
+liye draft rakha tha. Naye pushes se ab active status set hota hai.
+Purane already-pushed (draft) products ko active karne ke liye
+shopify_publish.py (naya, alag script) use karo - wo existing pushed
+products ko batch mein draft->active karta hai.
+
 Requires GitHub Secrets:
     SHOPIFY_STORE_DOMAIN     = luxella-9299.myshopify.com
     SHOPIFY_CLIENT_ID        = Dev Dashboard app ka Client ID
@@ -45,18 +52,16 @@ Behavior:
   liye zaroori hai)
 - 'pushed_to_shopify = false' wale products (jinke paas valid name +
   selling_price_inr hai) ko batch mein push karta hai
-- Har product 'draft' status mein banta hai (safety - live nahi hota
-  jab tak manually Active na kiya jaaye Shopify admin se)
+- Har product 'active' status mein banta hai (LIVE, customers ko dikhega)
 - Poori image gallery bhejta hai (image_urls array agar available hai,
   warna image_url fallback)
 - Product create hone ke turant baad, actual stock quantity set karta
   hai (inventory_levels/set) - kyunki create-time inventory_quantity
   field Shopify ignore kar deta hai
 - Successfully push hone pe: pushed_to_shopify=true, shopify_product_id,
-  shopify_variant_id, shopify_inventory_item_id, last_synced_price_inr,
-  last_synced_in_stock, shopify_synced_at - sab update karta hai (taaki
-  shopify_sync.py isko baad mein track kar sake price/stock changes ke
-  liye)
+  shopify_variant_id, shopify_inventory_item_id, shopify_status,
+  last_synced_price_inr, last_synced_in_stock, shopify_synced_at - sab
+  update karta hai
 - Shopify REST Admin API rate limit ~2 req/sec hai - isliye har call ke
   beech chhota delay hai
 - BATCH_SIZE env var se control hota hai kitne products ek run mein
@@ -168,7 +173,7 @@ def build_shopify_payload(p):
             "vendor": brand.title(),
             "product_type": category.title(),
             "tags": f"{brand}, {category}",
-            "status": "draft",
+            "status": "active",
             "variants": [
                 {
                     "sku": sku,
@@ -219,6 +224,7 @@ def mark_pushed(sb, product_id, shopify_product, in_stock):
         "shopify_product_id": str(shopify_product["id"]),
         "shopify_variant_id": str(variant["id"]),
         "shopify_inventory_item_id": str(variant["inventory_item_id"]),
+        "shopify_status": shopify_product.get("status", "active"),
         "last_synced_price_inr": variant["price"],
         "last_synced_in_stock": in_stock,
         "shopify_pushed_at": datetime.now(timezone.utc).isoformat(),
@@ -241,7 +247,7 @@ def run():
     location_id = get_default_location_id(access_token)
     print(f"Default location: {location_id}")
 
-    print(f"{len(pending)} products push kar rahe hain Shopify pe...")
+    print(f"{len(pending)} products push kar rahe hain Shopify pe (LIVE)...")
 
     summary = {"pushed": 0, "errors": 0}
 
@@ -258,7 +264,7 @@ def run():
             mark_pushed(sb, p["id"], shopify_product, in_stock)
             summary["pushed"] += 1
             img_count = len(shopify_product.get("images", []))
-            print(f"  [OK] {p.get('name')} -> Shopify ID {shopify_product['id']} (stock: {quantity}, images: {img_count})")
+            print(f"  [OK] {p.get('name')} -> Shopify ID {shopify_product['id']} (stock: {quantity}, images: {img_count}, LIVE)")
         except Exception as e:
             summary["errors"] += 1
             print(f"  [ERROR] {p.get('name')}: {e}")
