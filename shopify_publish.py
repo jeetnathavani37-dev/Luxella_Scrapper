@@ -1,32 +1,31 @@
 """
 shopify_publish.py
 
-Already-pushed (jo pehle 'draft' status mein bane the) products ko
-LIVE karta hai - status ko 'draft' se 'active' mein change karta hai
-Shopify pe. shopify_push.py ab naye products directly 'active' banata
-hai, ye script sirf PURANE draft products ke liye ek-baar (ya jab tak
-sab clear na ho) chalana hai.
+Already-pushed products ko LIVE + PUBLISHED karta hai - status ko
+'draft' se 'active' AUR product ko Online Store channel pe publish
+karta hai. shopify_push.py ab naye products directly active+published
+banata hai, ye script sirf PURANE products ke liye hai (jo is fix se
+pehle push hue the).
 
-NOTE (2026-08-30): Pehla version buggy tha - .neq("shopify_status",
-"active") filter SQL ke NULL-trap mein fasa: jin rows mein
-shopify_status column NULL tha (purane 1731 products, jo shopify_status
-column add hone SE PEHLE push hue the), unko neq() automatically skip
-kar deta hai (SQL mein "NULL != 'active'" ka result NULL hota hai, TRUE
-nahi - isliye row match hi nahi karti). Isliye "koi draft products nahi
-mile" wrongly print ho raha tha jabki 1731 draft products the. Fix:
-OR filter use kiya - shopify_status != 'active' YA shopify_status IS
-NULL, dono cases cover honi chahiye.
+NOTE (2026-08-30): Do bugs fix kiye is round mein:
+1. .neq("shopify_status", "active") SQL NULL-trap mein fasa tha (purane
+   products ka shopify_status column NULL tha, neq() unhe skip kar deta
+   hai) - fix: OR filter (neq ya is null).
+2. BADA discovery: status="active" karna kaafi nahi hai - Shopify mein
+   "active" status aur "Online Store channel pe published" hona DO ALAG
+   cheezein hain. status=active kiya to bhi product invisible raha
+   storefront pe jab tak "published": true bhi na bheja jaaye. Isliye
+   is script mein ab dono set karte hain - status aur published.
 
 Requires GitHub Secrets:
     SHOPIFY_STORE_DOMAIN, SHOPIFY_CLIENT_ID, SHOPIFY_CLIENT_SECRET
-    (same jaise shopify_push.py)
 
 Behavior:
 - 'pushed_to_shopify = true' AND (shopify_status != 'active' YA NULL)
   wale products ko batch mein leta hai
-- Har ek ko Shopify pe PUT call se status='active' set karta hai
-- Supabase mein shopify_status='active' update karta hai (taaki dobara
-  process na ho)
+- Har ek ko Shopify pe PUT call se status='active' + published=true
+  set karta hai (ek hi request mein)
+- Supabase mein shopify_status='active' update karta hai
 - BATCH_SIZE se control - default 300
 
 Usage:
@@ -78,9 +77,7 @@ def get_shopify_base_url():
 
 
 def fetch_draft_products(sb, limit):
-    """shopify_status != 'active' YA NULL - dono cases cover karta hai
-    (NULL wale purane products the, jo column add hone se pehle push
-    hue the)."""
+    """shopify_status != 'active' YA NULL - dono cases cover karta hai."""
     resp = (
         sb.table("products")
         .select("id,name,shopify_product_id,shopify_status")
@@ -94,11 +91,12 @@ def fetch_draft_products(sb, limit):
 
 
 def publish_product(access_token, shopify_product_id):
+    """Status active AND Online Store publish - dono ek hi call mein."""
     headers = {
         "X-Shopify-Access-Token": access_token,
         "Content-Type": "application/json",
     }
-    payload = {"product": {"id": int(shopify_product_id), "status": "active"}}
+    payload = {"product": {"id": int(shopify_product_id), "status": "active", "published": True}}
     resp = requests.put(
         f"{get_shopify_base_url()}/products/{shopify_product_id}.json",
         headers=headers, json=payload, timeout=30,
@@ -115,14 +113,14 @@ def run():
     drafts = fetch_draft_products(sb, BATCH_SIZE)
 
     if not drafts:
-        print("Koi draft products nahi mile - sab already active hain.")
+        print("Koi draft products nahi mile - sab already active+published hain.")
         return
 
     print("Access token generate kar rahe hain...")
     access_token = get_access_token()
     print("Token mil gaya.")
 
-    print(f"{len(drafts)} products ko LIVE kar rahe hain...")
+    print(f"{len(drafts)} products ko LIVE + PUBLISHED kar rahe hain...")
 
     summary = {"published": 0, "errors": 0}
 
@@ -131,7 +129,7 @@ def run():
             publish_product(access_token, p["shopify_product_id"])
             mark_published(sb, p["id"])
             summary["published"] += 1
-            print(f"  [LIVE] {p.get('name')} -> Shopify ID {p['shopify_product_id']}")
+            print(f"  [LIVE+PUBLISHED] {p.get('name')} -> Shopify ID {p['shopify_product_id']}")
         except Exception as e:
             summary["errors"] += 1
             print(f"  [ERROR] {p.get('name')}: {e}")
