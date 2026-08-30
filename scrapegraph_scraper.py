@@ -14,29 +14,25 @@ CSS-selector wale keys (tile_selector, name_selector, etc.) yahan
 zaroori nahi hain - bas "start_urls" chahiye, aur optionally apna
 "scrape_prompt" (warna default e-commerce prompt use hoga).
 
+Optional "fetch_config" dict bhi de sakte ho config mein - JS-rendering
+ya stealth mode ke liye (hard-to-scrape sites). Example:
+    "fetch_config": {"mode": "js", "stealth": True, "wait": 2000}
+NOTE: stealth mode extra credits leta hai (~5 credits/request) - sirf
+un sites pe use karo jo normal fetch se block ho rahi hain.
+
 NOTE (2026-08-30): ScrapeGraphAI ne v1 API deprecate kar diya hai - naye
-API keys sirf v2 (v2-api.scrapegraphai.com) ke saath kaam karte hain,
-purana v1 endpoint (api.scrapegraphai.com/v1/...) 403 "auth_invalid_key"
-deta hai naye keys ke saath ("issued against the legacy v1 surface").
-v2 ka /api/extract endpoint synchronous hai (koi request_id polling
-nahi chahiye).
+API keys sirf v2 (v2-api.scrapegraphai.com) ke saath kaam karte hain.
+v2 ka /api/extract endpoint synchronous hai, result "json" key mein
+hota hai ("data" mein NAHI).
 
-NOTE (2026-08-30) #2: v2 response shape actual mein
-{id, raw, json, usage, metadata} hai - result "json" key mein hota hai,
-"data" mein NAHI (pehle galat key padh rahe the, isliye hamesha empty
-milta tha). Fix kiya.
-
-NOTE (2026-08-30) #3: Sephora abhi bhi 0 products deta hai - raw
-response se pata chala ki ScrapeGraphAI ko sirf ek chhota ~224-char
-HTML chunk mila (real product listing page hazaron characters ka hota
-hai) - matlab Sephora ne fetch ko block kar diya ya ek interstitial/
-bot-check page diya, poora page nahi. Isliye 0-products debug print ab
-metadata.chunker se total fetched content size bhi dikhata hai - agar
-wo bohot chhota hai (<2000 chars jaisa), iska matlab page hi properly
-load nahi hua, LLM ka extraction problem nahi hai. Sephora ko abhi bhi
-ScraperAPI premium tier ya ScrapeGraphAI ke stealth/proxy options
-chahiye honge - dono providers isse same wajah se struggle kar rahe
-hain (anti-bot).
+NOTE (2026-08-30) #2: Batch test - Sephora/Gilt/Rue La La sab ~220-250
+char "blocked" response de rahe the (default fetch config se). Kohl's
+alag - 2412 chars real content mila par LLM ko products nahi dikhe
+(shayad JS-rendered product grid, static fetch mein empty tha). Hoka
+502 diya (ScrapeGraphAI server issue, site-block nahi). Ab in sabke
+liye "fetch_config": {"mode": "js", "stealth": True, "wait": 2000} try
+kar rahe hain - JS rendering Kohl's ke liye, stealth Sephora/Gilt/Rue
+La La ke bot-detection bypass ke liye.
 
 NOTE: Ye scraperapi_scraper.py ka replacement nahi hai - MK/Coach jaise
 Akamai-protected sites ke liye ScraperAPI hi better hai (unka core
@@ -99,12 +95,15 @@ def _total_chunk_size(body):
         return None
 
 
-def fetch_products(url, prompt, timeout=120):
+def fetch_products(url, prompt, fetch_config=None, timeout=120):
     """Ek page ko ScrapeGraphAI v2 /api/extract se extract karta hai,
     poora response body return karta hai. Result body['json'] mein hota
-    hai (body['data'] mein NAHI - v2 ka actual response shape)."""
+    hai. fetch_config diya ho to JS-rendering/stealth mode/etc enable
+    karta hai (hard-to-scrape sites ke liye)."""
     headers = _headers()
     payload = {"url": url, "prompt": prompt}
+    if fetch_config:
+        payload["fetchConfig"] = fetch_config
 
     resp = requests.post(SGAI_EXTRACT_URL, headers=headers, json=payload, timeout=timeout)
     resp.raise_for_status()
@@ -155,6 +154,7 @@ def scrape_site_scrapegraph(config):
     0 products pe raw response + fetched-content-size bhi print karta hai
     debug ke liye (chhota content size = likely blocked/interstitial page)."""
     prompt = config.get("scrape_prompt", DEFAULT_PROMPT)
+    fetch_config = config.get("fetch_config")
     all_products = []
 
     for url in config["start_urls"]:
@@ -163,7 +163,7 @@ def scrape_site_scrapegraph(config):
 
         for attempt in range(1, MAX_RETRIES + 1):
             try:
-                body = fetch_products(url, prompt)
+                body = fetch_products(url, prompt, fetch_config=fetch_config)
                 last_body = body
                 raw_json = body.get("json", {})
                 products = normalize_products(raw_json, config)
