@@ -18,6 +18,10 @@ Proxy (Webshare rotating residential) ke liye ye GitHub Secrets chahiye:
 MK/Coach (Akamai-protected) ke liye ye GitHub Secret chahiye:
     SCRAPERAPI_KEY  = ScraperAPI dashboard se
 
+Prompt-based extraction (selector-maintenance heavy sites) ke liye:
+    SCRAPEGRAPH_API_KEY = ScrapeGraphAI dashboard se
+    (config mein "use_scrapegraph": True, dekho scrapegraph_scraper.py)
+
 NOTE (2026-08-29): Proxy sites ke liye images/fonts/media block kar diye
 hain (sirf HTML/CSS/JS load hota hai) - isse proxy bandwidth ~70-80% tak
 bach jaati hai. Product image URLs HTML attributes (src) se hi milte hain,
@@ -29,6 +33,11 @@ anti-bot service) use karte hain instead - "use_scraperapi": True config
 mein, dekho scraperapi_scraper.py. Proxy/browser wala code ab sirf
 future ke liye rakha hai agar koi aur JS-heavy non-Akamai site add karni
 ho (abhi koi site "needs_browser" use nahi kar rahi).
+
+NOTE (2026-08-30): ScrapeGraphAI add kiya - prompt-based extraction,
+CSS selectors ki zaroorat nahi. "use_scrapegraph": True config mein.
+Akamai bypass ke liye nahi hai (uske liye ScraperAPI hi rahega) - ye
+un sites ke liye hai jinke selectors baar baar todte/badalte hain.
 """
 import os
 import re
@@ -38,6 +47,7 @@ from sites import SITES
 from extract import scrape_site
 from shopify_scraper import scrape_shopify
 from scraperapi_scraper import scrape_site_scraperapi
+from scrapegraph_scraper import scrape_site_scrapegraph
 from db import save_product
 
 
@@ -129,6 +139,8 @@ def run():
                     print(f"  {config['domain']} -> {len(products)} products")
                 elif config.get("use_scraperapi"):
                     products = scrape_site_scraperapi(config)
+                elif config.get("use_scrapegraph"):
+                    products = scrape_site_scrapegraph(config)
                 else:
                     browser, context = build_browser_context(p, config)
                     page = context.new_page()
