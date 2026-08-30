@@ -14,6 +14,13 @@ ke through generate hota hai - aur wo token sirf 24 ghante valid rehta
 hai. Isliye ye script har run mein fresh token khud generate karta hai
 (cache nahi karta - GitHub Actions runs already short-lived hain).
 
+NOTE (2026-08-30) #2: Discover kiya ki product-create ke time
+'variants[].inventory_quantity' field Shopify silently ignore kar deta
+hai - naya product hamesha 0 stock se banta hai, chahe payload mein
+kuch bhi ho. Sahi stock set karne ke liye alag se
+'inventory_levels/set' API call chahiye (location_id + inventory_item_id
+ke saath) - CREATE ke turant baad. Ye fix kar diya hai neeche.
+
 Requires GitHub Secrets:
     SHOPIFY_STORE_DOMAIN     = luxella-9299.myshopify.com
     SHOPIFY_CLIENT_ID        = Dev Dashboard app ka Client ID
@@ -26,19 +33,24 @@ Requires GitHub Secrets:
 Behavior:
 - Sabse pehle client_id + client_secret se ek fresh access token leta
   hai (client credentials grant - POST /admin/oauth/access_token)
+- Store ki default location fetch karta hai (inventory set karne ke
+  liye zaroori hai)
 - 'pushed_to_shopify = false' wale products (jinke paas valid name +
   selling_price_inr hai) ko batch mein push karta hai
 - Har product 'draft' status mein banta hai (safety - live nahi hota
   jab tak manually Active na kiya jaaye Shopify admin se)
-- Successfully push hone pe: pushed_to_shopify=true, shopify_product_id
-  aur shopify_pushed_at update karta hai - taaki agli baar duplicate na
-  bane
+- Product create hone ke turant baad, actual stock quantity set karta
+  hai (inventory_levels/set) - kyunki create-time inventory_quantity
+  field Shopify ignore kar deta hai
+- Successfully push hone pe: pushed_to_shopify=true, shopify_product_id,
+  shopify_variant_id, shopify_inventory_item_id, last_synced_price_inr,
+  last_synced_in_stock, shopify_synced_at - sab update karta hai (taaki
+  shopify_sync.py isko baad mein track kar sake price/stock changes ke
+  liye)
 - Shopify REST Admin API rate limit ~2 req/sec hai - isliye har call ke
   beech chhota delay hai
 - BATCH_SIZE env var se control hota hai kitne products ek run mein
-  push honge (default 200) - taaki GitHub Actions timeout na ho.
-  16K jaisa bada backlog kai runs mein gradually clear ho jaayega agar
-  ye script schedule pe chalta rahe.
+  push honge (default 200)
 
 Usage:
     BATCH_SIZE=200 python shopify_push.py
@@ -51,13 +63,8 @@ from datetime import datetime, timezone
 from supabase import create_client
 
 BATCH_SIZE = int(os.environ.get("BATCH_SIZE", "200"))
-RATE_LIMIT_DELAY = 0.6  # seconds between calls, ~1.6 req/sec (Shopify allows ~2/sec)
+RATE_LIMIT_DELAY = 0.6
 API_VERSION = "2025-01"
-
-
-def slugify(text, maxlen=60):
-    s = re.sub(r"[^a-zA-Z0-9]+", "-", text.lower()).strip("-")
-    return s[:maxlen]
 
 
 def get_supabase():
@@ -74,9 +81,6 @@ def get_shopify_domain():
 
 
 def get_access_token():
-    """Client credentials grant - Client ID + Secret se fresh access
-    token generate karta hai (24h valid, isliye har run mein naya
-    leta hai instead of storing/caching)."""
     client_id = os.environ.get("SHOPIFY_CLIENT_ID")
     client_secret = os.environ.get("SHOPIFY_CLIENT_SECRET")
     if not client_id or not client_secret:
@@ -98,13 +102,22 @@ def get_access_token():
 
 
 def get_shopify_base_url():
-    domain = get_shopify_domain()
-    return f"https://{domain}/admin/api/{API_VERSION}"
+    return f"https://{get_shopify_domain()}/admin/api/{API_VERSION}"
+
+
+def get_default_location_id(access_token):
+    """Store ki pehli/default location ka ID leta hai - inventory set
+    karne ke liye zaroori hai."""
+    headers = {"X-Shopify-Access-Token": access_token}
+    resp = requests.get(f"{get_shopify_base_url()}/locations.json", headers=headers, timeout=30)
+    resp.raise_for_status()
+    locations = resp.json().get("locations", [])
+    if not locations:
+        raise RuntimeError("Store mein koi location nahi mili")
+    return locations[0]["id"]
 
 
 def fetch_pending_products(sb, limit):
-    """Un products ko fetch karta hai jo abhi tak Shopify pe push nahi
-    hue - valid name aur selling_price honi chahiye."""
     resp = (
         sb.table("products")
         .select("id,sku,name,brand,category,selling_price_inr,image_url,in_stock,site")
@@ -119,14 +132,12 @@ def fetch_pending_products(sb, limit):
 
 
 def build_shopify_payload(p):
-    """Supabase row ko Shopify product-create payload mein convert karta hai."""
     name = (p.get("name") or "").strip()
     brand = (p.get("brand") or p.get("site") or "luxella").strip()
     sku = (p.get("sku") or "").strip() or f"LX-{p['id']}"
     price = str(p.get("selling_price_inr") or "0")
     category = (p.get("category") or "uncategorized").strip()
     image_url = p.get("image_url")
-    in_stock = bool(p.get("in_stock"))
 
     title = f"{brand.title()} {name}".strip()[:255]
 
@@ -144,7 +155,6 @@ def build_shopify_payload(p):
                     "price": price,
                     "inventory_management": "shopify",
                     "inventory_policy": "deny",
-                    "inventory_quantity": 10 if in_stock else 0,
                 }
             ],
         }
@@ -156,21 +166,43 @@ def build_shopify_payload(p):
 
 
 def create_shopify_product(payload, access_token):
-    base_url = get_shopify_base_url()
     headers = {
         "X-Shopify-Access-Token": access_token,
         "Content-Type": "application/json",
     }
-    resp = requests.post(f"{base_url}/products.json", headers=headers, json=payload, timeout=30)
+    resp = requests.post(f"{get_shopify_base_url()}/products.json", headers=headers, json=payload, timeout=30)
     resp.raise_for_status()
     return resp.json()["product"]
 
 
-def mark_pushed(sb, product_id, shopify_product_id):
+def set_inventory(access_token, location_id, inventory_item_id, quantity):
+    """Naya product banne ke baad actual stock set karta hai -
+    create-time 'inventory_quantity' field Shopify ignore kar deta hai,
+    isliye ye alag call zaroori hai."""
+    headers = {
+        "X-Shopify-Access-Token": access_token,
+        "Content-Type": "application/json",
+    }
+    payload = {
+        "location_id": location_id,
+        "inventory_item_id": inventory_item_id,
+        "available": quantity,
+    }
+    resp = requests.post(f"{get_shopify_base_url()}/inventory_levels/set.json", headers=headers, json=payload, timeout=30)
+    resp.raise_for_status()
+
+
+def mark_pushed(sb, product_id, shopify_product, in_stock):
+    variant = shopify_product["variants"][0]
     sb.table("products").update({
         "pushed_to_shopify": True,
-        "shopify_product_id": str(shopify_product_id),
+        "shopify_product_id": str(shopify_product["id"]),
+        "shopify_variant_id": str(variant["id"]),
+        "shopify_inventory_item_id": str(variant["inventory_item_id"]),
+        "last_synced_price_inr": variant["price"],
+        "last_synced_in_stock": in_stock,
         "shopify_pushed_at": datetime.now(timezone.utc).isoformat(),
+        "shopify_synced_at": datetime.now(timezone.utc).isoformat(),
     }).eq("id", product_id).execute()
 
 
@@ -186,6 +218,9 @@ def run():
     access_token = get_access_token()
     print("Token mil gaya.")
 
+    location_id = get_default_location_id(access_token)
+    print(f"Default location: {location_id}")
+
     print(f"{len(pending)} products push kar rahe hain Shopify pe...")
 
     summary = {"pushed": 0, "errors": 0}
@@ -194,9 +229,15 @@ def run():
         try:
             payload = build_shopify_payload(p)
             shopify_product = create_shopify_product(payload, access_token)
-            mark_pushed(sb, p["id"], shopify_product["id"])
+
+            in_stock = bool(p.get("in_stock"))
+            quantity = 10 if in_stock else 0
+            variant = shopify_product["variants"][0]
+            set_inventory(access_token, location_id, variant["inventory_item_id"], quantity)
+
+            mark_pushed(sb, p["id"], shopify_product, in_stock)
             summary["pushed"] += 1
-            print(f"  [OK] {p.get('name')} -> Shopify ID {shopify_product['id']}")
+            print(f"  [OK] {p.get('name')} -> Shopify ID {shopify_product['id']} (stock: {quantity})")
         except Exception as e:
             summary["errors"] += 1
             print(f"  [ERROR] {p.get('name')}: {e}")
