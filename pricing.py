@@ -7,13 +7,18 @@ NOTE (2026-08-30): selling_price_inr ab hamesha "...99" pe round hota
 hai (jaise 7872.12 -> 7899, 24900.50 -> 24999) - psychological/retail
 pricing standard. Formula: ceil(price/100)*100 - 1.
 
-NOTE (2026-08-30) #2: compare_at_price_inr add kiya - ye "MRP"/anchor
-price hai jo Shopify pe crossed-out dikhta hai (jaise ~~15000~~ 9699,
-"discount" ka feel dene ke liye). India mein "MRP" term technically
-packaged-goods specific hai (Legal Metrology Act) - isliye Shopify ka
-"Compare at price" use kiya hai (same visual effect, bina literal MRP
-claim ke). Formula: higher margin (COMPARE_AT_MARGIN) pe based hai,
-selling price se hamesha zyada hota hai, ...99 pe round.
+NOTE (2026-08-30) #2: compare_at_price_inr - Shopify pe crossed-out
+"MRP"/anchor price (jaise ~~15000~~ 9699). India mein "MRP" term
+technically packaged-goods specific hai (Legal Metrology Act) - isliye
+Shopify ka "Compare at price" use kiya hai (same visual effect, bina
+literal MRP claim ke).
+
+NOTE (2026-08-30) #3: Formula change - pehle compare_at ek fixed higher
+margin (45%) pe based tha, jisse sirf ~14% "off" dikhta tha (bohot kam,
+retail standard se neeche). Ab MIN_DISCOUNT_PERCENT (35%) se seedha
+compute hota hai: compare_at = selling_price / (1 - 0.35). Isse HAR
+product ka discount display kam se kam ~35% guarantee hota hai
+(rounding ki wajah se thoda zyada bhi dikh sakta hai, kabhi kam nahi).
 """
 import math
 
@@ -23,7 +28,7 @@ CURRENCY_TO_INR = {
 }
 SHIPPING_PER_KG = 1250
 MARGIN = 0.25
-COMPARE_AT_MARGIN = 0.45  # "anchor" price ke liye - selling price se zyada dikhta hai
+MIN_DISCOUNT_PERCENT = 0.35  # har product pe kam se kam itna "% off" dikhna chahiye
 
 CATEGORY_WEIGHTS = {
     "shoes": 2.0,
@@ -70,6 +75,17 @@ def round_to_99(value):
     return math.ceil(value / 100) * 100 - 1
 
 
+def calculate_compare_at_price(selling_price_inr):
+    """selling_price se MRP/compare-at calculate karta hai, taaki kam se
+    kam MIN_DISCOUNT_PERCENT (35%) off dikhe. Formula: compare_at =
+    selling / (1 - 0.35). Rounding ki wajah se actual % off 35% se
+    thoda zyada bhi ho sakta hai, kabhi kam nahi."""
+    if selling_price_inr is None:
+        return None
+    raw_compare_at = selling_price_inr / (1 - MIN_DISCOUNT_PERCENT)
+    return round_to_99(raw_compare_at)
+
+
 def calculate_pricing(price, category, currency="USD", name=None):
     if price is None:
         return {
@@ -88,8 +104,7 @@ def calculate_pricing(price, category, currency="USD", name=None):
     raw_selling_price = landed_cost_inr * (1 + MARGIN)
     selling_price_inr = round_to_99(raw_selling_price)
 
-    raw_compare_at = landed_cost_inr * (1 + COMPARE_AT_MARGIN)
-    compare_at_price_inr = round_to_99(raw_compare_at)
+    compare_at_price_inr = calculate_compare_at_price(selling_price_inr)
 
     return {
         "price_inr": price_inr,
