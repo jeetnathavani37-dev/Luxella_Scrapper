@@ -2,31 +2,22 @@
 shopify_image_backfill.py
 
 Un products ke liye extra gallery images add karta hai jo PEHLE (multi-
-image fix se pehle) push ho chuke the sirf 1 image ke saath. Naye
-products (shopify_push.py se) already poori gallery ke saath aate hain
-- iski zaroorat nahi. Ye sirf purane already-pushed products ke liye
-one-time backfill hai.
+image fix se pehle) push ho chuke the sirf 1 image ke saath.
 
-Prerequisite: image_urls column populate honi chahiye Supabase mein
-(shopify_scraper.py re-scrape karega Shopify-based brands, purane rows
-update ho jaayenge) - agar image_urls null hai, ye script us product
-ko skip kar dega.
+NOTE (2026-08-31): Fix - pehle DB se ek hi batch fetch karte the (jaise
+300), phir uसमें se sirf 2+-image wale filter karte the - agar batch
+mein zyada single-image products the, actual kaam kam hota (jaise
+300 mangke sirf 125 process hue). Ab jab tak target count na mile ya
+saare products scan na ho jaayein, agli pages fetch karta rehta hai.
+Saath hi jin products ke paas sirf 1 image hai (kuch add karne ko nahi
+hai), unko bhi turant 'images_backfilled=true' mark kar dete hain -
+taaki wo baar baar dobara scan na ho.
 
 Requires GitHub Secrets:
     SHOPIFY_STORE_DOMAIN, SHOPIFY_CLIENT_ID, SHOPIFY_CLIENT_SECRET
 
-Behavior:
-- 'pushed_to_shopify = true' products leta hai jinke paas image_urls
-  hai (2+ images, matlab gallery available hai)
-- Har product ke Shopify se current images count check karta hai
-- Agar Supabase mein zyada images hain current Shopify count se, baaki
-  images POST /products/{id}/images.json se add karta hai
-- Tracking: 'images_backfilled' column use karta hai duplicate-processing
-  avoid karne ke liye
-- BATCH_SIZE se control - default 200
-
 Usage:
-    BATCH_SIZE=200 python shopify_image_backfill.py
+    BATCH_SIZE=300 python shopify_image_backfill.py
 """
 import os
 import time
@@ -36,6 +27,8 @@ from supabase import create_client
 BATCH_SIZE = int(os.environ.get("BATCH_SIZE", "200"))
 RATE_LIMIT_DELAY = 0.6
 API_VERSION = "2025-01"
+PAGE_SIZE = 500
+MAX_PAGES = 20  # safety cap - max 10,000 rows scan karega ek run mein
 
 
 def get_supabase():
@@ -73,9 +66,7 @@ def get_shopify_base_url():
     return f"https://{get_shopify_domain()}/admin/api/{API_VERSION}"
 
 
-def fetch_candidates(sb, limit):
-    """Pushed products jinke paas gallery (2+ images) hai aur abhi tak
-    backfill nahi hua."""
+def fetch_one_page(sb, offset):
     resp = (
         sb.table("products")
         .select("id,name,shopify_product_id,image_urls,images_backfilled")
@@ -83,11 +74,43 @@ def fetch_candidates(sb, limit):
         .not_.is_("shopify_product_id", "null")
         .not_.is_("image_urls", "null")
         .is_("images_backfilled", "null")
-        .limit(limit)
+        .range(offset, offset + PAGE_SIZE - 1)
         .execute()
     )
-    # sirf wahi jinke paas actually 2+ images hain
-    return [p for p in resp.data if isinstance(p.get("image_urls"), list) and len(p["image_urls"]) > 1]
+    return resp.data
+
+
+def mark_no_gallery(sb, product_id):
+    """Sirf 1 image hai - kuch add karne ko nahi, isliye 'done' mark kar
+    dete hain taaki dobara scan na ho."""
+    sb.table("products").update({"images_backfilled": True}).eq("id", product_id).execute()
+
+
+def fetch_candidates(sb, target_count):
+    """Jab tak target_count real candidates (2+ images) na mil jaayein
+    ya saare rows scan na ho jaayein, pages fetch karta rehta hai. Single-
+    image products ko turant 'backfilled' mark kar deta hai (skip future)."""
+    candidates = []
+    offset = 0
+
+    for _ in range(MAX_PAGES):
+        page = fetch_one_page(sb, offset)
+        if not page:
+            break
+
+        for p in page:
+            urls = p.get("image_urls")
+            if isinstance(urls, list) and len(urls) > 1:
+                candidates.append(p)
+            else:
+                mark_no_gallery(sb, p["id"])
+
+        offset += PAGE_SIZE
+
+        if len(candidates) >= target_count:
+            break
+
+    return candidates[:target_count]
 
 
 def get_current_image_count(access_token, shopify_product_id):
@@ -127,7 +150,7 @@ def run():
 
     print("Access token generate kar rahe hain...")
     access_token = get_access_token()
-    print(f"Token mil gaya. {len(candidates)} products check kar rahe hain...")
+    print(f"Token mil gaya. {len(candidates)} products (real gallery wale) backfill kar rahe hain...")
 
     summary = {"images_added": 0, "products_processed": 0, "errors": 0}
 
