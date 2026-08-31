@@ -1,6 +1,8 @@
 name: Backfill Product Images
 
 on:
+  schedule:
+    - cron: '0 4,10,16,22 * * *'   # din mein 4 baar
   workflow_dispatch:
     inputs:
       batch_size:
@@ -31,5 +33,5 @@ jobs:
           SHOPIFY_STORE_DOMAIN: ${{ secrets.SHOPIFY_STORE_DOMAIN }}
           SHOPIFY_CLIENT_ID: ${{ secrets.SHOPIFY_CLIENT_ID }}
           SHOPIFY_CLIENT_SECRET: ${{ secrets.SHOPIFY_CLIENT_SECRET }}
-          BATCH_SIZE: ${{ github.event.inputs.batch_size || '200' }}
+          BATCH_SIZE: ${{ github.event.inputs.batch_size || '300' }}
         run: python shopify_image_backfill.py
