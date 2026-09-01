@@ -6,19 +6,25 @@ push karta hai - Shopify Admin API (REST) ke through.
 
 NOTE (2026-08-30): Client credentials grant (24h token), inventory
 alag call se set hoti hai (create-time field Shopify ignore karta hai),
-poori image gallery + real description + multi-size variants bhejte
-hain (agar available hain), status=active + published=true (Online
-Store pe live hone ke liye dono zaroori hain).
+real description + multi-size variants bhejte hain (agar available
+hain), status=active + published=true (Online Store pe live hone ke
+liye dono zaroori hain).
 
 NOTE (2026-08-30) #2: compare_at_price bhi bhejte hain ab - Shopify pe
-crossed-out "anchor" price dikhta hai (jaise ~~15000~~ 9699), discount
-ka feel dene ke liye. Supabase ke 'compare_at_price_inr' column se
-(higher-margin formula, pricing.py mein).
+crossed-out "anchor" price dikhta hai, discount ka feel dene ke liye.
 
-NOTE (2026-08-30) #3: Location ID ab HARDCODE hai (87267410093) - pehle
-GET /locations.json se fetch karte the, jisko 'read_locations' scope
-chahiye tha jo humare app mein add hi nahi ho pa raha tha (baar baar
-403). Store mein sirf ek hi location hai, isliye hardcode safe hai.
+NOTE (2026-08-30) #3: Location ID hardcode hai (87267410093) -
+'read_locations' scope avoid karne ke liye.
+
+NOTE (2026-09-01) #4: BADA speed fix - product create karte waqt sirf
+1 image bhej rahe the... wait, actually poori gallery (3-8 images) bhej
+rahe the, aur Shopify create-request ke andar hi har image ko fetch/
+validate karta hai SYNCHRONOUSLY - isliye create call bohot slow ho
+raha tha (~15 sec/product, sirf ~22 products/5-min run). Fix: create
+ke time sirf PEHLI image bhejte hain (fast), baaki gallery
+shopify_image_backfill.py alag se, asynchronously add karta hai (wo
+already isi kaam ke liye bana tha). Isse throughput kaafi tez hona
+chahiye.
 
 Requires GitHub Secrets:
     SHOPIFY_STORE_DOMAIN, SHOPIFY_CLIENT_ID, SHOPIFY_CLIENT_SECRET
@@ -93,12 +99,13 @@ def fetch_pending_products(sb, limit):
     return resp.data
 
 
-def get_all_image_urls(p):
+def get_first_image_url(p):
+    """Sirf pehli image - create-time fast rakhne ke liye. Baaki gallery
+    shopify_image_backfill.py alag se add karta hai."""
     urls = p.get("image_urls")
     if urls and isinstance(urls, list) and len(urls) > 0:
-        return urls
-    single = p.get("image_url")
-    return [single] if single else []
+        return urls[0]
+    return p.get("image_url")
 
 
 def get_size_variants(p):
@@ -140,7 +147,7 @@ def build_shopify_payload(p):
     price = str(p.get("selling_price_inr") or "0")
     compare_at = p.get("compare_at_price_inr")
     category = (p.get("category") or "uncategorized").strip()
-    image_urls = get_all_image_urls(p)
+    first_image = get_first_image_url(p)
     description = p.get("description")
 
     title = f"{brand.title()} {name}".strip()[:255]
@@ -187,8 +194,8 @@ def build_shopify_payload(p):
     }
     if options_payload:
         payload["product"]["options"] = options_payload
-    if image_urls:
-        payload["product"]["images"] = [{"src": url} for url in image_urls]
+    if first_image:
+        payload["product"]["images"] = [{"src": first_image}]  # sirf 1 - speed ke liye
 
     return payload, size_variants
 
@@ -247,7 +254,7 @@ def run():
     location_id = DEFAULT_LOCATION_ID
     print(f"Default location (hardcoded): {location_id}")
 
-    print(f"{len(pending)} products push kar rahe hain Shopify pe (LIVE + PUBLISHED)...")
+    print(f"{len(pending)} products push kar rahe hain Shopify pe (LIVE + PUBLISHED, 1 image - fast mode)...")
 
     summary = {"pushed": 0, "errors": 0, "multi_size": 0}
 
@@ -273,9 +280,8 @@ def run():
 
             mark_pushed(sb, p["id"], shopify_product, overall_in_stock)
             summary["pushed"] += 1
-            img_count = len(shopify_product.get("images", []))
             size_info = f", sizes: {len(size_variants)}" if size_variants else ""
-            print(f"  [OK] {p.get('name')} -> Shopify ID {shopify_product['id']} (images: {img_count}{size_info})")
+            print(f"  [OK] {p.get('name')} -> Shopify ID {shopify_product['id']}{size_info}")
         except Exception as e:
             summary["errors"] += 1
             print(f"  [ERROR] {p.get('name')}: {e}")
