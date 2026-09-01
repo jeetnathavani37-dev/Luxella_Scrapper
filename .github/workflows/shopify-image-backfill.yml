@@ -8,7 +8,7 @@ on:
       batch_size:
         description: 'Ek run mein kitne products backfill karne hain'
         required: false
-        default: '200'
+        default: '2000'
 
 jobs:
   backfill:
