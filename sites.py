@@ -55,6 +55,17 @@ se verify kiye, taaki 404 na aaye jaisa MK ke purane URL ke saath hua
 tha). Selectors same rakhe hain kyunki sab ek hi site platform ke
 alag-alag category pages hain, tile/name/price structure same rehta
 hai.
+
+NOTE (2026-09-01): MK aur Coach sabse zyada bikte hain (user confirmed)
+- isliye inke liye extra kaam kiya:
+1. Categories aur badhaye - MK mein jewelry, wallets, watches,
+   sunglasses add kiye (pehle sirf handbags/shoes/men's tha).
+2. Multiple images ke liye alag script (scraperapi_detail_gallery.py)
+   banaya - category-listing page se sirf 1 thumbnail milta hai,
+   poori gallery ke liye har product ka individual detail page visit
+   karna padta hai. Wo script CDN URL pattern-matching se robust
+   tareeke se gallery nikaalta hai (assets.michaelkors.com ya
+   coach.scene7.com pattern), fragile CSS selectors ki jagah.
 """
 
 # ScrapeGraphAI ke liye - JS-rendering + stealth mode + scrolling,
@@ -63,13 +74,18 @@ STEALTH_FETCH_CONFIG = {"mode": "js", "stealth": True, "wait": 2000, "scrolls": 
 
 SITES = [
     # ScraperAPI required (Akamai/PerimeterX-protected, DIY browser automation block ho jata tha)
-    # Poori site cover: handbags, shoes, men's - 3 categories (2026-08-30)
+    # MK/Coach best-sellers hain (2026-09-01) - poori site cover: handbags,
+    # shoes, men's, jewelry, wallets, watches, sunglasses
     {
         "name": "michaelkors",
         "start_urls": [
             "https://www.michaelkors.com/women/handbags/",
             "https://www.michaelkors.com/women/shoes/",
             "https://www.michaelkors.com/men/",
+            "https://www.michaelkors.com/women/jewelry/",
+            "https://www.michaelkors.com/women/wallets/",
+            "https://www.michaelkors.com/women/watches/",
+            "https://www.michaelkors.com/women/sunglasses/",
         ],
         "use_scraperapi": True,
         "tile_selector": ".product-tile",
@@ -78,13 +94,14 @@ SITES = [
         "link_selector": ".product-tile-image-link, a[href]",
         "currency": "USD",
     },
-    # Poori site cover: women (all), handbags-specific, men's - 3 categories
+    # Poori site cover: women (all), handbags-specific, men's, accessories
     {
         "name": "coach",
         "start_urls": [
             "https://www.coach.com/shop/women/view-all",
             "https://www.coach.com/shop/women/handbags/view-all",
             "https://www.coach.com/shop/men/view-all",
+            "https://www.coach.com/shop/women/accessories/view-all",
         ],
         "use_scraperapi": True,
         "tile_selector": ".product-tile",
