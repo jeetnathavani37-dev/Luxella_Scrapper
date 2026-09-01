@@ -66,11 +66,12 @@ NOTE (2026-09-01): MK aur Coach sabse zyada bikte hain (user confirmed)
    karna padta hai. Wo script CDN URL pattern-matching se robust
    tareeke se gallery nikaalta hai (assets.michaelkors.com ya
    coach.scene7.com pattern), fragile CSS selectors ki jagah.
-3. Kate Spade Outlet add kiya (surprise.katespade.com) - Coach ke hi
-   parent company (Tapestry) ki hai, isliye same .product-tile
-   selectors try kiye (agar match na kare toh sites.py mein selectors
-   debug/adjust karne honge - MAX_RETRIES wala debug output batayega
-   tile_selector match count).
+3. Kate Spade Outlet add kiya - Coach ke hi parent company (Tapestry)
+   ki hai, isliye same .product-tile selectors try kiye. NOTE: purana
+   domain "surprise.katespade.com" tha, jo ab katespadeoutlet.com pe
+   migrate ho chuka hai (site khud confirm karta hai: "Our Surprise
+   deals are moving to katespadeoutlet.com") - user ne sahi domain
+   bataya, isliye URL fix kiya.
 """
 
 # ScrapeGraphAI ke liye - JS-rendering + stealth mode + scrolling,
@@ -117,11 +118,12 @@ SITES = [
     },
     # Kate Spade Outlet (2026-09-01) - Coach ke parent company (Tapestry)
     # ki hai, isliye same selectors try kar rahe (SFCC platform pattern
-    # jaisa MK/Coach). Agar match na kare, debug output se pata chalega.
+    # jaisa MK/Coach). Domain: katespadeoutlet.com (purana
+    # surprise.katespade.com wahan se migrate ho chuka hai).
     {
         "name": "katespade",
         "start_urls": [
-            "https://surprise.katespade.com/shop/outlet/view-all",
+            "https://www.katespadeoutlet.com/shop/view-all",
         ],
         "use_scraperapi": True,
         "tile_selector": ".product-tile",
