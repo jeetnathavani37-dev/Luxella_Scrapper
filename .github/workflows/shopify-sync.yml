@@ -8,7 +8,7 @@ on:
       batch_size:
         description: 'Ek run mein kitne products sync karne hain'
         required: false
-        default: '300'
+        default: '3000'
 
 jobs:
   sync:
