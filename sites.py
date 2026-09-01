@@ -72,6 +72,15 @@ NOTE (2026-09-01): MK aur Coach sabse zyada bikte hain (user confirmed)
    migrate ho chuka hai (site khud confirm karta hai: "Our Surprise
    deals are moving to katespadeoutlet.com") - user ne sahi domain
    bataya, isliye URL fix kiya.
+4. SKIMS add kiya - confirmed Shopify platform pe hai (multiple sources
+   se verify kiya), isliye halka shopify-platform scraper use hota hai,
+   koi ScraperAPI/selectors ki zaroorat nahi.
+5. Lululemon add kiya - shop.lululemon.com custom platform pe hai (NOT
+   Shopify, verify kiya), isliye ScraperAPI use kiya. Selectors abhi
+   BEST-GUESS hain (generic e-commerce class-name patterns, jaisa
+   on.com ke liye kiya tha) - real HTML structure verify nahi kiya,
+   test run ke baad scraperapi_scraper.py ka debug output
+   (tile_selector match count) dekh ke adjust karna pad sakta hai.
 """
 
 # ScrapeGraphAI ke liye - JS-rendering + stealth mode + scrolling,
@@ -130,6 +139,24 @@ SITES = [
         "name_selector": '[class*="name"], [class*="title"], .pdp-link',
         "price_selector": '[class*="price"]',
         "link_selector": ".product-tile-image-link, a[href]",
+        "currency": "USD",
+    },
+    # Lululemon (2026-09-01) - shop.lululemon.com custom platform hai
+    # (Shopify nahi). Selectors best-guess hain - agar debug output mein
+    # tile_selector match count 0 aaye, generic class patterns adjust
+    # karne honge actual HTML dekh ke.
+    {
+        "name": "lululemon",
+        "start_urls": [
+            "https://shop.lululemon.com/c/women-bestsellers/n16o10znskl",
+            "https://shop.lululemon.com/c/women-leggings/n1udsq",
+            "https://shop.lululemon.com/c/bestsellers-accessories/n14w56znskl",
+        ],
+        "use_scraperapi": True,
+        "tile_selector": '[class*="product-tile"], [class*="ProductTile"], [class*="product-card"]',
+        "name_selector": '[class*="product-name"], [class*="ProductName"], [class*="title"]',
+        "price_selector": '[class*="price"]',
+        "link_selector": "a[href]",
         "currency": "USD",
     },
     # StockX/GOAT confirmed working via ScraperAPI (2026-08-29) - both are
@@ -313,6 +340,7 @@ SITES = [
     {"name": "boden", "platform": "shopify", "domain": "https://us.boden.com", "category": "clothing", "currency": "USD"},
     {"name": "pjsalvage", "platform": "shopify", "domain": "https://www.pjsalvage.com", "category": "apparel", "currency": "USD"},
     {"name": "hampdenclothing", "platform": "shopify", "domain": "https://hampdenclothing.com", "category": "clothing", "currency": "USD"},
+    {"name": "skims", "platform": "shopify", "domain": "https://skims.com", "category": "apparel", "currency": "USD"},
 
     # Drinkware / Travel / Luggage
     {"name": "stanley1913", "platform": "shopify", "domain": "https://www.stanley1913.com", "category": "drinkware", "currency": "USD"},
