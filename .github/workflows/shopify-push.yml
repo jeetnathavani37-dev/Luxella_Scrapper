@@ -8,7 +8,7 @@ on:
       batch_size:
         description: 'Ek run mein kitne products push karne hain'
         required: false
-        default: '200'
+        default: '5000'
 
 jobs:
   push:
