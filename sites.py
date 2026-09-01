@@ -81,6 +81,10 @@ NOTE (2026-09-01): MK aur Coach sabse zyada bikte hain (user confirmed)
    on.com ke liye kiya tha) - real HTML structure verify nahi kiya,
    test run ke baad scraperapi_scraper.py ka debug output
    (tile_selector match count) dekh ke adjust karna pad sakta hai.
+6. Victoria Beckham (fashion + beauty, dono confirmed Shopify) aur
+   Good American (Khloe Kardashian/Emma Grede, confirmed Shopify) add
+   kiye - teeno halke shopify-platform scraper se, koi issue expected
+   nahi.
 """
 
 # ScrapeGraphAI ke liye - JS-rendering + stealth mode + scrolling,
@@ -341,6 +345,9 @@ SITES = [
     {"name": "pjsalvage", "platform": "shopify", "domain": "https://www.pjsalvage.com", "category": "apparel", "currency": "USD"},
     {"name": "hampdenclothing", "platform": "shopify", "domain": "https://hampdenclothing.com", "category": "clothing", "currency": "USD"},
     {"name": "skims", "platform": "shopify", "domain": "https://skims.com", "category": "apparel", "currency": "USD"},
+    {"name": "victoriabeckham", "platform": "shopify", "domain": "https://www.victoriabeckham.com", "category": "clothing", "currency": "USD"},
+    {"name": "victoriabeckhambeauty", "platform": "shopify", "domain": "https://victoriabeckhambeauty.com", "category": "beauty", "currency": "USD"},
+    {"name": "goodamerican", "platform": "shopify", "domain": "https://www.goodamerican.com", "category": "clothing", "currency": "USD"},
 
     # Drinkware / Travel / Luggage
     {"name": "stanley1913", "platform": "shopify", "domain": "https://www.stanley1913.com", "category": "drinkware", "currency": "USD"},
