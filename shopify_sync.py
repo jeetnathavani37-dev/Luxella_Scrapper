@@ -17,6 +17,12 @@ mein sirf ek hi location hai (single-location business), isliye ye
 change hone ka risk nahi hai. Agar kabhi naya location add ho ya ye ID
 change ho, yahan manually update karna padega.
 
+NOTE (2026-09-02): run() ab kitne products actually CHANGE hue (price/
+stock update) wo count return karta hai (0 nahi) - taaki
+auto_pilot.py (jo push+sync+image-backfill ko continuous loop mein
+chalata hai jab tak sab kuch complete na ho jaaye) pata laga sake ki
+sync mein abhi bhi meaningful kaam bacha hai ya nahi.
+
 Requires GitHub Secrets:
     SHOPIFY_STORE_DOMAIN, SHOPIFY_CLIENT_ID, SHOPIFY_CLIENT_SECRET
 
@@ -125,7 +131,7 @@ def run():
 
     if not products:
         print("Koi pushed products nahi mile sync karne ke liye.")
-        return
+        return 0
 
     print("Access token generate kar rahe hain...")
     access_token = get_access_token()
@@ -194,6 +200,7 @@ def run():
 
     print("\n=== Summary ===")
     print(summary)
+    return summary["price_updated"] + summary["stock_updated"]
 
 
 if __name__ == "__main__":
