@@ -16,15 +16,23 @@ crossed-out "anchor" price dikhta hai, discount ka feel dene ke liye.
 NOTE (2026-08-30) #3: Location ID hardcode hai (87267410093) -
 'read_locations' scope avoid karne ke liye.
 
-NOTE (2026-09-01) #4: BADA speed fix - product create karte waqt sirf
-1 image bhej rahe the... wait, actually poori gallery (3-8 images) bhej
-rahe the, aur Shopify create-request ke andar hi har image ko fetch/
-validate karta hai SYNCHRONOUSLY - isliye create call bohot slow ho
-raha tha (~15 sec/product, sirf ~22 products/5-min run). Fix: create
-ke time sirf PEHLI image bhejte hain (fast), baaki gallery
-shopify_image_backfill.py alag se, asynchronously add karta hai (wo
-already isi kaam ke liye bana tha). Isse throughput kaafi tez hona
-chahiye.
+NOTE (2026-09-01) #4: BADA speed fix - poori gallery (3-8 images)
+create-request mein bhej rahe the, Shopify har image SYNCHRONOUSLY
+fetch/validate karta hai create ke andar - isliye create call bohot
+slow ho raha tha (~15 sec/product). Fix: sirf PEHLI image create pe
+bhejte hain, baaki gallery shopify_image_backfill.py alag se add karta
+hai.
+
+NOTE (2026-09-01) #5: DOOSRA speed fix - multi-size products (jaise
+AloYoga leggings, 6-8 sizes) ke liye HAR size ke liye alag
+inventory_levels/set call kar rahe the, chahe wo size out-of-stock ho.
+Discovery: naya product hamesha 0 stock se banta hai by default
+(Shopify create-time inventory field ignore karta hai) - matlab
+out-of-stock sizes ke liye call karne ki ZAROORAT HI NAHI, wo already
+0 hain. Fix: sirf IN-STOCK sizes ke liye hi set_inventory call karte
+hain ab, baaki skip. Isse multi-size products ke liye API calls kaafi
+kam ho gaye (jaise 8-size product mein pehle 8 calls, ab sirf jitni
+sizes actually in-stock hain utni hi).
 
 Requires GitHub Secrets:
     SHOPIFY_STORE_DOMAIN, SHOPIFY_CLIENT_ID, SHOPIFY_CLIENT_SECRET
@@ -254,9 +262,9 @@ def run():
     location_id = DEFAULT_LOCATION_ID
     print(f"Default location (hardcoded): {location_id}")
 
-    print(f"{len(pending)} products push kar rahe hain Shopify pe (LIVE + PUBLISHED, 1 image - fast mode)...")
+    print(f"{len(pending)} products push kar rahe hain Shopify pe (LIVE + PUBLISHED, fast mode)...")
 
-    summary = {"pushed": 0, "errors": 0, "multi_size": 0}
+    summary = {"pushed": 0, "errors": 0, "multi_size": 0, "inventory_calls_skipped": 0}
 
     for p in pending:
         try:
@@ -266,16 +274,24 @@ def run():
             shopify_variants = shopify_product["variants"]
 
             if size_variants:
+                # Sirf IN-STOCK sizes ke liye call karo - out-of-stock
+                # sizes already 0 hain by default (naya product hamesha
+                # 0 stock se banta hai), unke liye call karna waste hai.
                 for sv, shopify_v in zip(size_variants, shopify_variants):
-                    qty = 10 if sv["in_stock"] else 0
-                    set_inventory(access_token, location_id, shopify_v["inventory_item_id"], qty)
-                    time.sleep(RATE_LIMIT_DELAY)
+                    if sv["in_stock"]:
+                        set_inventory(access_token, location_id, shopify_v["inventory_item_id"], 10)
+                        time.sleep(RATE_LIMIT_DELAY)
+                    else:
+                        summary["inventory_calls_skipped"] += 1
                 summary["multi_size"] += 1
                 overall_in_stock = any(sv["in_stock"] for sv in size_variants)
             else:
                 in_stock = bool(p.get("in_stock"))
-                quantity = 10 if in_stock else 0
-                set_inventory(access_token, location_id, shopify_variants[0]["inventory_item_id"], quantity)
+                if in_stock:
+                    set_inventory(access_token, location_id, shopify_variants[0]["inventory_item_id"], 10)
+                    time.sleep(RATE_LIMIT_DELAY)
+                else:
+                    summary["inventory_calls_skipped"] += 1
                 overall_in_stock = in_stock
 
             mark_pushed(sb, p["id"], shopify_product, overall_in_stock)
