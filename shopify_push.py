@@ -23,16 +23,16 @@ slow ho raha tha (~15 sec/product). Fix: sirf PEHLI image create pe
 bhejte hain, baaki gallery shopify_image_backfill.py alag se add karta
 hai.
 
-NOTE (2026-09-01) #5: DOOSRA speed fix - multi-size products (jaise
-AloYoga leggings, 6-8 sizes) ke liye HAR size ke liye alag
-inventory_levels/set call kar rahe the, chahe wo size out-of-stock ho.
-Discovery: naya product hamesha 0 stock se banta hai by default
-(Shopify create-time inventory field ignore karta hai) - matlab
-out-of-stock sizes ke liye call karne ki ZAROORAT HI NAHI, wo already
-0 hain. Fix: sirf IN-STOCK sizes ke liye hi set_inventory call karte
-hain ab, baaki skip. Isse multi-size products ke liye API calls kaafi
-kam ho gaye (jaise 8-size product mein pehle 8 calls, ab sirf jitni
-sizes actually in-stock hain utni hi).
+NOTE (2026-09-01) #5: DOOSRA speed fix - multi-size products ke liye
+HAR size ke liye alag inventory_levels/set call kar rahe the, chahe wo
+size out-of-stock ho. Discovery: naya product hamesha 0 stock se banta
+hai by default - out-of-stock sizes ke liye call karne ki zaroorat hi
+nahi. Fix: sirf IN-STOCK sizes ke liye hi call karte hain ab.
+
+NOTE (2026-09-02) #6: run() ab kitne products push hue wo count return
+karta hai (0 nahi) - taaki auto_pilot.py (jo push+sync+image-backfill
+ko continuous loop mein chalata hai jab tak sab kuch complete na ho
+jaaye) pata laga sake ki push mein abhi bhi kaam bacha hai ya nahi.
 
 Requires GitHub Secrets:
     SHOPIFY_STORE_DOMAIN, SHOPIFY_CLIENT_ID, SHOPIFY_CLIENT_SECRET
@@ -253,7 +253,7 @@ def run():
 
     if not pending:
         print("Koi pending products nahi hain push karne ke liye.")
-        return
+        return 0
 
     print("Access token generate kar rahe hain (client credentials grant)...")
     access_token = get_access_token()
@@ -306,6 +306,7 @@ def run():
 
     print("\n=== Summary ===")
     print(summary)
+    return summary["pushed"]
 
 
 if __name__ == "__main__":
