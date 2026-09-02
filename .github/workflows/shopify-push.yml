@@ -33,5 +33,5 @@ jobs:
           SHOPIFY_STORE_DOMAIN: ${{ secrets.SHOPIFY_STORE_DOMAIN }}
           SHOPIFY_CLIENT_ID: ${{ secrets.SHOPIFY_CLIENT_ID }}
           SHOPIFY_CLIENT_SECRET: ${{ secrets.SHOPIFY_CLIENT_SECRET }}
-          BATCH_SIZE: ${{ github.event.inputs.batch_size || '200' }}
+          BATCH_SIZE: ${{ github.event.inputs.batch_size || '2000' }}
         run: python shopify_push.py
