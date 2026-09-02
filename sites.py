@@ -74,17 +74,28 @@ NOTE (2026-09-01): MK aur Coach sabse zyada bikte hain (user confirmed)
    bataya, isliye URL fix kiya.
 4. SKIMS add kiya - confirmed Shopify platform pe hai (multiple sources
    se verify kiya), isliye halka shopify-platform scraper use hota hai,
-   koi ScraperAPI/selectors ki zaroorat nahi.
+   koi ScraperAPI/selectors ki zaroorat nahi. IMPORTANT: Shopify-platform
+   scraper (shopify_scraper.py) /products.json se paginate karta hai -
+   isse ENTIRE catalog automatically cover hota hai, koi category-URL
+   list ki zaroorat nahi (MK/Coach/Lululemon jaise ScraperAPI-based
+   sites se alag - unko manually category URLs deni padti hain).
 5. Lululemon add kiya - shop.lululemon.com custom platform pe hai (NOT
    Shopify, verify kiya), isliye ScraperAPI use kiya. Selectors abhi
-   BEST-GUESS hain (generic e-commerce class-name patterns, jaisa
-   on.com ke liye kiya tha) - real HTML structure verify nahi kiya,
-   test run ke baad scraperapi_scraper.py ka debug output
-   (tile_selector match count) dekh ke adjust karna pad sakta hai.
+   BEST-GUESS hain. 2026-09-02: 2 aur broad categories add ki
+   (women-whats-new, women-work-clothes) coverage badhane ke liye -
+   abhi bhi sirf top-selling categories cover ho rahi hain (Lululemon
+   ke paas 100+ granular sub-categories hain jaise sitemap se pata
+   chala, sabko individually add karna impractical hai; 5 broad
+   categories reasonable coverage denge).
 6. Victoria Beckham (fashion + beauty, dono confirmed Shopify) aur
    Good American (Khloe Kardashian/Emma Grede, confirmed Shopify) add
    kiye - teeno halke shopify-platform scraper se, koi issue expected
    nahi.
+
+NOTE (2026-09-02) #2: Kate Spade ka count bohot kam aaya pehle test
+mein (8 products, expected ~291) - selectors partially match kar rahe
+the ya page fully load nahi hui. Investigate/fix karna baaki hai -
+abhi tak root cause confirm nahi hua.
 """
 
 # ScrapeGraphAI ke liye - JS-rendering + stealth mode + scrolling,
@@ -132,7 +143,8 @@ SITES = [
     # Kate Spade Outlet (2026-09-01) - Coach ke parent company (Tapestry)
     # ki hai, isliye same selectors try kar rahe (SFCC platform pattern
     # jaisa MK/Coach). Domain: katespadeoutlet.com (purana
-    # surprise.katespade.com wahan se migrate ho chuka hai).
+    # surprise.katespade.com wahan se migrate ho chuka hai). NOTE: pehla
+    # test sirf 8 products laaya (expected ~291) - debug pending.
     {
         "name": "katespade",
         "start_urls": [
@@ -145,16 +157,18 @@ SITES = [
         "link_selector": ".product-tile-image-link, a[href]",
         "currency": "USD",
     },
-    # Lululemon (2026-09-01) - shop.lululemon.com custom platform hai
-    # (Shopify nahi). Selectors best-guess hain - agar debug output mein
-    # tile_selector match count 0 aaye, generic class patterns adjust
-    # karne honge actual HTML dekh ke.
+    # Lululemon (2026-09-01, expanded 2026-09-02) - shop.lululemon.com
+    # custom platform hai (NOT Shopify). Selectors best-guess hain. 5
+    # broad categories - poora granular sub-category list (100+) cover
+    # karna impractical, ye reasonable spread hai.
     {
         "name": "lululemon",
         "start_urls": [
             "https://shop.lululemon.com/c/women-bestsellers/n16o10znskl",
             "https://shop.lululemon.com/c/women-leggings/n1udsq",
             "https://shop.lululemon.com/c/bestsellers-accessories/n14w56znskl",
+            "https://shop.lululemon.com/c/women-whats-new/n16o10zq0cf",
+            "https://shop.lululemon.com/c/women-work-clothes/n14rn9z4uwk",
         ],
         "use_scraperapi": True,
         "tile_selector": '[class*="product-tile"], [class*="ProductTile"], [class*="product-card"]',
