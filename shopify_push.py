@@ -30,9 +30,18 @@ hai by default - out-of-stock sizes ke liye call karne ki zaroorat hi
 nahi. Fix: sirf IN-STOCK sizes ke liye hi call karte hain ab.
 
 NOTE (2026-09-02) #6: run() ab kitne products push hue wo count return
-karta hai (0 nahi) - taaki auto_pilot.py (jo push+sync+image-backfill
-ko continuous loop mein chalata hai jab tak sab kuch complete na ho
-jaaye) pata laga sake ki push mein abhi bhi kaam bacha hai ya nahi.
+karta hai (0 nahi) - taaki auto_pilot.py pata laga sake ki push mein
+abhi bhi kaam bacha hai ya nahi.
+
+NOTE (2026-09-02) #7: mark_pushed() ab last_synced_compare_at_price_inr
+BHI set karta hai push ke time hi (pehle sirf shopify_sync.py set karta
+tha) - kyunki MRP already push-payload mein bhej diya jaata hai, isliye
+Shopify pe already sahi hai. Pehle isse "mrp_synced" tracking column
+NULL rehta tha jab tak sync dobara us row ko touch na kare - jisse
+lagta tha ki sync "peeche reh gaya hai", jabki actual Shopify data
+hamesha sahi tha, sirf humara bookkeeping column stale tha. Fix se
+sync ka real kaam (sirf genuine price-CHANGES track karna, future mein)
+kam ho jaata hai, aur progress-metrics turant accurate dikhte hain.
 
 Requires GitHub Secrets:
     SHOPIFY_STORE_DOMAIN, SHOPIFY_CLIENT_ID, SHOPIFY_CLIENT_SECRET
@@ -201,6 +210,9 @@ def build_shopify_payload(p):
         }
     }
     if options_payload:
+        payload["product"]["images"] = [{"src": first_image}] if first_image else None
+        if not first_image:
+            payload["product"].pop("images", None)
         payload["product"]["options"] = options_payload
     if first_image:
         payload["product"]["images"] = [{"src": first_image}]  # sirf 1 - speed ke liye
@@ -232,7 +244,7 @@ def set_inventory(access_token, location_id, inventory_item_id, quantity):
     resp.raise_for_status()
 
 
-def mark_pushed(sb, product_id, shopify_product, in_stock):
+def mark_pushed(sb, product_id, shopify_product, in_stock, compare_at_price_inr):
     variant = shopify_product["variants"][0]
     sb.table("products").update({
         "pushed_to_shopify": True,
@@ -241,6 +253,7 @@ def mark_pushed(sb, product_id, shopify_product, in_stock):
         "shopify_inventory_item_id": str(variant["inventory_item_id"]),
         "shopify_status": shopify_product.get("status", "active"),
         "last_synced_price_inr": variant["price"],
+        "last_synced_compare_at_price_inr": compare_at_price_inr,
         "last_synced_in_stock": in_stock,
         "shopify_pushed_at": datetime.now(timezone.utc).isoformat(),
         "shopify_synced_at": datetime.now(timezone.utc).isoformat(),
@@ -285,6 +298,7 @@ def run():
                         summary["inventory_calls_skipped"] += 1
                 summary["multi_size"] += 1
                 overall_in_stock = any(sv["in_stock"] for sv in size_variants)
+                compare_at_for_tracking = size_variants[0]["compare_at_price_inr"]
             else:
                 in_stock = bool(p.get("in_stock"))
                 if in_stock:
@@ -293,8 +307,9 @@ def run():
                 else:
                     summary["inventory_calls_skipped"] += 1
                 overall_in_stock = in_stock
+                compare_at_for_tracking = p.get("compare_at_price_inr")
 
-            mark_pushed(sb, p["id"], shopify_product, overall_in_stock)
+            mark_pushed(sb, p["id"], shopify_product, overall_in_stock, compare_at_for_tracking)
             summary["pushed"] += 1
             size_info = f", sizes: {len(size_variants)}" if size_variants else ""
             print(f"  [OK] {p.get('name')} -> Shopify ID {shopify_product['id']}{size_info}")
