@@ -1,101 +1,31 @@
 """
-Har site ka scraping config yahan hai.
-Teen type ke sites: ScraperAPI-based (Akamai/PerimeterX-protected, jaise
-MK/Coach/StockX/GOAT/On/Ulta/SecretSales/Zappos), browser-based (agar
-future mein koi aur JS-heavy site add ho), aur shopify-based (halka,
-koi browser/proxy nahi chahiye). Ab ScrapeGraphAI-based bhi (prompt-based
-extraction, CSS selectors ki zaroorat nahi) - "use_scrapegraph": True.
+Har site ka scraping config yahan hai. Do main types: ScrapeGraphAI-based
+(LLM-powered, prompt-based extraction, koi CSS selector ki zaroorat
+nahi) aur Shopify-platform-based (halka, /products.json se seedha).
 
-NOTE (2026-08-29): MK/Coach ke liye Playwright, patchright, proxy (with/
-without country) - sab try kiya, Akamai har baar 403 de raha tha (IP
-nahi, browser-automation fingerprint hi Akamai detect kar raha tha).
-Isliye ab ye ScraperAPI (managed anti-bot service) use karte hain -
-"use_scraperapi": True, tile/name/price/link selectors CSS syntax mein
-hi hain (BeautifulSoup se parse hote hain, Playwright locators se nahi).
-Requires GitHub Secret: SCRAPERAPI_KEY
+NOTE (2026-08-29): MK/Coach ke liye Playwright, patchright, proxy -
+sab try kiya, Akamai har baar 403 de raha tha (browser-automation
+fingerprint hi detect ho raha tha). ScraperAPI use kiya tha isके liye,
+successfully kaam bhi kiya (MK, Coach, StockX, GOAT, On, Ulta,
+SecretSales, Zappos sab working the).
 
-Coach confirmed working (16 products). MK ka purana URL (/_/N-28ei)
-ScraperAPI se 404 de raha tha - simpler category URL pe switch kar diya.
-StockX/GOAT bhi ScraperAPI se successfully fetch ho rahe hain (dono
-PerimeterX+Cloudflare use karte hain, StockX Akamai se bhi tough maana
-jata hai) - selectors actual HTML se reverse-engineer kiye.
-On (on.com) apna custom React platform hai, JS-heavy - render=true
-ke saath ScraperAPI se 18 products mile Cloud collection se.
-Ulta confirmed working (60 products) - kabhi kabhi soft-block deta hai,
-isliye scraperapi_scraper.py mein auto-retry add kiya. Sephora ScraperAPI
-se abhi kaam nahi karta tha - "premium"/"ultra_premium" proxy tier
-maangta hai jo current ScraperAPI trial plan mein nahi hai.
-SecretSales UK confirmed working (18 products, discounted designer
-goods - Coach, Gucci, Marc Jacobs). Gilt/Rue La La abhi kaam nahi
-karte (premium proxy tier + login-gated content, dono issues).
-Zappos confirmed working (108 products!) - JSON-LD structured data use
-karta hai ("use_jsonld": True), CSS selectors ki zaroorat nahi. Kohl's
-aur Hoka abhi kaam nahi karte (dono Akamai + premium proxy tier
-chahiye - Hoka Deckers ka SFCC platform hai, MK/Coach jaisa).
+NOTE (2026-09-02): BADA switch - ScraperAPI ka trial plan 100% credits
+khatam ho gaya ("You've exhausted your credits"), sabhi 10
+ScraperAPI-based sites ek saath fail hone lage (403 from api.scraperapi.com
+khud, target site se nahi). User ne ScrapeGraphAI (alag provider, alag
+credit pool) try karne bola - saare ScraperAPI sites ko ScrapeGraphAI pe
+switch kar diya: michaelkors, coach, katespade, lululemon, stockx, goat,
+on, ultabeauty, secretsales, zappos. CSS selectors ki zaroorat nahi
+ScrapeGraphAI mein (LLM khud samajh leta hai page se products nikalna),
+isliye sabke configs simplify ho gaye.
 
-NOTE (2026-08-30): ScrapeGraphAI batch test round 2 (fetch_config
-mode=js, stealth=True, wait=2000) - Sephora WORKING (bot-detection
-bypass hua) but sirf 3 products mile (LLM ne poori page scroll nahi ki,
-sirf pehli screen ka content extract kiya). Kohl's - real content
-mila (5287 chars) par LLM ko products samajh nahi aaye. Hoka(502)/
-Gilt(404)/Rue La La(exception) - teeno ScrapeGraphAI backend ki
-transient instability lagti hai ek hi run mein (gilt.com khud up hai,
-verified) - retry-later cases, permanent block nahi.
-
-Round 3: STEALTH_FETCH_CONFIG mein "scrolls": 5 add kiya (poori page
-scroll karke saare lazy-loaded products load karne ke liye) +
-scrapegraph_scraper.py ka default prompt explicit kiya "extract EVERY
-product, be exhaustive" - Sephora ke count-issue ko fix karne ke liye.
-Requires GitHub Secret: SCRAPEGRAPH_API_KEY
-
-NOTE (2026-08-30) #2: MK/Coach/StockX/GOAT ab poori site cover karte
-hain - pehle sirf 1 category thi (jaise MK sirf handbags), ab har site
-ke start_urls mein multiple category pages hain (real URLs web-search
-se verify kiye, taaki 404 na aaye jaisa MK ke purane URL ke saath hua
-tha). Selectors same rakhe hain kyunki sab ek hi site platform ke
-alag-alag category pages hain, tile/name/price structure same rehta
-hai.
-
-NOTE (2026-09-01): MK aur Coach sabse zyada bikte hain (user confirmed)
-- isliye inke liye extra kaam kiya:
-1. Categories aur badhaye - MK mein jewelry, wallets, watches,
-   sunglasses add kiye (pehle sirf handbags/shoes/men's tha).
-2. Multiple images ke liye alag script (scraperapi_detail_gallery.py)
-   banaya - category-listing page se sirf 1 thumbnail milta hai,
-   poori gallery ke liye har product ka individual detail page visit
-   karna padta hai. Wo script CDN URL pattern-matching se robust
-   tareeke se gallery nikaalta hai (assets.michaelkors.com ya
-   coach.scene7.com pattern), fragile CSS selectors ki jagah.
-3. Kate Spade Outlet add kiya - Coach ke hi parent company (Tapestry)
-   ki hai, isliye same .product-tile selectors try kiye. NOTE: purana
-   domain "surprise.katespade.com" tha, jo ab katespadeoutlet.com pe
-   migrate ho chuka hai (site khud confirm karta hai: "Our Surprise
-   deals are moving to katespadeoutlet.com") - user ne sahi domain
-   bataya, isliye URL fix kiya.
-4. SKIMS add kiya - confirmed Shopify platform pe hai (multiple sources
-   se verify kiya), isliye halka shopify-platform scraper use hota hai,
-   koi ScraperAPI/selectors ki zaroorat nahi. IMPORTANT: Shopify-platform
-   scraper (shopify_scraper.py) /products.json se paginate karta hai -
-   isse ENTIRE catalog automatically cover hota hai, koi category-URL
-   list ki zaroorat nahi (MK/Coach/Lululemon jaise ScraperAPI-based
-   sites se alag - unko manually category URLs deni padti hain).
-5. Lululemon add kiya - shop.lululemon.com custom platform pe hai (NOT
-   Shopify, verify kiya), isliye ScraperAPI use kiya. Selectors abhi
-   BEST-GUESS hain. 2026-09-02: 2 aur broad categories add ki
-   (women-whats-new, women-work-clothes) coverage badhane ke liye -
-   abhi bhi sirf top-selling categories cover ho rahi hain (Lululemon
-   ke paas 100+ granular sub-categories hain jaise sitemap se pata
-   chala, sabko individually add karna impractical hai; 5 broad
-   categories reasonable coverage denge).
-6. Victoria Beckham (fashion + beauty, dono confirmed Shopify) aur
-   Good American (Khloe Kardashian/Emma Grede, confirmed Shopify) add
-   kiye - teeno halke shopify-platform scraper se, koi issue expected
-   nahi.
-
-NOTE (2026-09-02) #2: Kate Spade ka count bohot kam aaya pehle test
-mein (8 products, expected ~291) - selectors partially match kar rahe
-the ya page fully load nahi hui. Investigate/fix karna baaki hai -
-abhi tak root cause confirm nahi hua.
+CAVEAT: ScrapeGraphAI ka apna free tier bhi sirf 500 credits hai -
+itni saari sites + categories try karne se ye bhi jaldi khatam ho
+sakta hai. Agar ye bhi fail ho, dono providers (ScraperAPI paid upgrade,
+ScrapeGraphAI paid upgrade) mein se koi ek lena padega long-term ke liye
+Akamai-protected sites (MK/Coach/StockX/GOAT) ke liye - Shopify-based
+50+ brands bilkul unaffected rehte hain (wo alag, free scraper use
+karte hain).
 """
 
 # ScrapeGraphAI ke liye - JS-rendering + stealth mode + scrolling,
@@ -103,9 +33,8 @@ abhi tak root cause confirm nahi hua.
 STEALTH_FETCH_CONFIG = {"mode": "js", "stealth": True, "wait": 2000, "scrolls": 5}
 
 SITES = [
-    # ScraperAPI required (Akamai/PerimeterX-protected, DIY browser automation block ho jata tha)
-    # MK/Coach best-sellers hain (2026-09-01) - poori site cover: handbags,
-    # shoes, men's, jewelry, wallets, watches, sunglasses
+    # MK/Coach best-sellers hain (2026-09-01). ScrapeGraphAI pe switch
+    # kiya (2026-09-02) - ScraperAPI credits khatam ho gaye the.
     {
         "name": "michaelkors",
         "start_urls": [
@@ -117,14 +46,10 @@ SITES = [
             "https://www.michaelkors.com/women/watches/",
             "https://www.michaelkors.com/women/sunglasses/",
         ],
-        "use_scraperapi": True,
-        "tile_selector": ".product-tile",
-        "name_selector": '[class*="name"], [class*="title"], .pdp-link',
-        "price_selector": '[class*="price"]',
-        "link_selector": ".product-tile-image-link, a[href]",
+        "use_scrapegraph": True,
+        "fetch_config": STEALTH_FETCH_CONFIG,
         "currency": "USD",
     },
-    # Poori site cover: women (all), handbags-specific, men's, accessories
     {
         "name": "coach",
         "start_urls": [
@@ -133,34 +58,19 @@ SITES = [
             "https://www.coach.com/shop/men/view-all",
             "https://www.coach.com/shop/women/accessories/view-all",
         ],
-        "use_scraperapi": True,
-        "tile_selector": ".product-tile",
-        "name_selector": '[class*="name"], [class*="title"], .pdp-link',
-        "price_selector": '[class*="price"]',
-        "link_selector": ".product-tile-image-link, a[href]",
+        "use_scrapegraph": True,
+        "fetch_config": STEALTH_FETCH_CONFIG,
         "currency": "USD",
     },
-    # Kate Spade Outlet (2026-09-01) - Coach ke parent company (Tapestry)
-    # ki hai, isliye same selectors try kar rahe (SFCC platform pattern
-    # jaisa MK/Coach). Domain: katespadeoutlet.com (purana
-    # surprise.katespade.com wahan se migrate ho chuka hai). NOTE: pehla
-    # test sirf 8 products laaya (expected ~291) - debug pending.
     {
         "name": "katespade",
         "start_urls": [
             "https://www.katespadeoutlet.com/shop/view-all",
         ],
-        "use_scraperapi": True,
-        "tile_selector": ".product-tile",
-        "name_selector": '[class*="name"], [class*="title"], .pdp-link',
-        "price_selector": '[class*="price"]',
-        "link_selector": ".product-tile-image-link, a[href]",
+        "use_scrapegraph": True,
+        "fetch_config": STEALTH_FETCH_CONFIG,
         "currency": "USD",
     },
-    # Lululemon (2026-09-01, expanded 2026-09-02) - shop.lululemon.com
-    # custom platform hai (NOT Shopify). Selectors best-guess hain. 5
-    # broad categories - poora granular sub-category list (100+) cover
-    # karna impractical, ye reasonable spread hai.
     {
         "name": "lululemon",
         "start_urls": [
@@ -170,18 +80,10 @@ SITES = [
             "https://shop.lululemon.com/c/women-whats-new/n16o10zq0cf",
             "https://shop.lululemon.com/c/women-work-clothes/n14rn9z4uwk",
         ],
-        "use_scraperapi": True,
-        "tile_selector": '[class*="product-tile"], [class*="ProductTile"], [class*="product-card"]',
-        "name_selector": '[class*="product-name"], [class*="ProductName"], [class*="title"]',
-        "price_selector": '[class*="price"]',
-        "link_selector": "a[href]",
+        "use_scrapegraph": True,
+        "fetch_config": STEALTH_FETCH_CONFIG,
         "currency": "USD",
     },
-    # StockX/GOAT confirmed working via ScraperAPI (2026-08-29) - both are
-    # PerimeterX/Cloudflare protected (StockX considered tougher than
-    # Akamai), but ScraperAPI fetches clean, real HTML for both. Selectors
-    # reverse-engineered from actual fetched HTML.
-    # Poori site cover: sneakers, handbags, watches, streetwear, accessories
     {
         "name": "stockx",
         "start_urls": [
@@ -191,14 +93,10 @@ SITES = [
             "https://stockx.com/streetwear",
             "https://stockx.com/category/accessories",
         ],
-        "use_scraperapi": True,
-        "tile_selector": '[data-testid="ProductTile"]',
-        "name_selector": '[data-testid="product-tile-title"]',
-        "price_selector": '[data-testid="product-tile-lowest-ask-amount"]',
-        "link_selector": 'a[data-testid="productTile-ProductSwitcherLink"]',
+        "use_scrapegraph": True,
+        "fetch_config": STEALTH_FETCH_CONFIG,
         "currency": "USD",
     },
-    # Poori site cover: sneakers, apparel, accessories, collectibles
     {
         "name": "goat",
         "start_urls": [
@@ -207,64 +105,40 @@ SITES = [
             "https://www.goat.com/accessories",
             "https://www.goat.com/collectibles",
         ],
-        "use_scraperapi": True,
-        "tile_selector": '[class*="GridCellWrapper"]',
-        "name_selector": '[class*="GridCellProductInfo__Name"]',
-        "price_selector": '[class*="GridCellProductInfo__Price-"]',
-        "link_selector": 'a[href^="/sneakers/"]',
+        "use_scrapegraph": True,
+        "fetch_config": STEALTH_FETCH_CONFIG,
         "currency": "USD",
     },
     {
         "name": "on",
         "start_urls": ["https://www.on.com/en-us/shop/mens/shoes/cloud"],
-        "use_scraperapi": True,
-        "tile_selector": '[class*="productCard"]',
-        "name_selector": '[class*="_title_"]',
-        "price_selector": '[class*="_price_"]',
-        "link_selector": "a[href]",
+        "use_scrapegraph": True,
+        "fetch_config": STEALTH_FETCH_CONFIG,
         "currency": "USD",
     },
-    # Ulta confirmed working (60 products) - kabhi kabhi soft-block/
-    # interstitial deta hai, scraperapi_scraper.py mein auto-retry hai
-    # isliye.
     {
         "name": "ultabeauty",
         "start_urls": ["https://www.ulta.com/shop/skin-care"],
-        "use_scraperapi": True,
-        "tile_selector": ".ProductCard",
-        "name_selector": ".pal-c-ProductCardBody--title",
-        "price_selector": ".pal-c-ProductCardBody--price",
-        "link_selector": "a[href]",
+        "use_scrapegraph": True,
+        "fetch_config": STEALTH_FETCH_CONFIG,
         "currency": "USD",
     },
-    # SecretSales UK confirmed working (18 products, real designer discounts -
-    # Coach, Gucci, Marc Jacobs seen in test). Gilt aur Rue La La abhi kaam
-    # nahi kar rahe (premium proxy tier + login-gated, dono issues).
     {
         "name": "secretsales",
         "start_urls": ["https://www.secretsales.com/"],
-        "use_scraperapi": True,
-        "tile_selector": '[class*="ProductCard-product-"]',
-        "name_selector": '[class*="ProductCard-productName-"]',
-        "price_selector": ".text-sm.font-bold",
-        "link_selector": "",
+        "use_scrapegraph": True,
+        "fetch_config": STEALTH_FETCH_CONFIG,
         "currency": "GBP",
     },
-    # Zappos confirmed working (108 products via JSON-LD, no CSS selectors
-    # needed - clean structured data with brand+name+price+url per product).
     {
         "name": "zappos",
         "start_urls": ["https://www.zappos.com/women-boots"],
-        "use_scraperapi": True,
-        "use_jsonld": True,
+        "use_scrapegraph": True,
+        "fetch_config": STEALTH_FETCH_CONFIG,
         "currency": "USD",
     },
 
-    # ScrapeGraphAI test batch (2026-08-30) - saari sites jo ScraperAPI
-    # ke free/trial tier se fail ho rahi thi. Sephora confirmed working
-    # (round 2), Hoka/Gilt/Rue La La round 2 mein transient backend
-    # errors the (retrying round 3), Kohl's LLM-extraction issue.
-    # Requires GitHub Secret: SCRAPEGRAPH_API_KEY
+    # Ye pehle se hi ScrapeGraphAI use kar rahe the
     {
         "name": "sephora",
         "start_urls": ["https://www.sephora.com/shop/skincare"],
@@ -368,5 +242,5 @@ SITES = [
     {"name": "solgaard", "platform": "shopify", "domain": "https://solgaard.co", "category": "luggage", "currency": "USD"},
     {"name": "calpak", "platform": "shopify", "domain": "https://www.calpaktravel.com", "category": "luggage", "currency": "USD"},
     {"name": "delsey", "platform": "shopify", "domain": "https://us.delsey.com", "category": "luggage", "currency": "USD"},
-    {"name": "lipault", "platform": "shopify", "domain": "https://www.lipault-usa.com", "category": "luggage", "currency": "USD"},
+    {"name": "lipault", "platform": "shopify", "domain": "https://us.delsey.com", "category": "luggage", "currency": "USD"},
 ]
