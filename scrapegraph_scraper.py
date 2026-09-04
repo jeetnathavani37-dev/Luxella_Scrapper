@@ -25,20 +25,15 @@ API keys sirf v2 (v2-api.scrapegraphai.com) ke saath kaam karte hain.
 v2 ka /api/extract endpoint synchronous hai, result "json" key mein
 hota hai ("data" mein NAHI).
 
-NOTE (2026-08-30) #2: Batch test round 1 (default fetch) - sab fail.
-Round 2 (fetch_config: mode=js, stealth=True, wait=2000):
-  - Sephora: WORKING (3 products!) - stealth mode ne bot-detection
-    bypass kiya. Par count kam hai - real listing page mein sainkdo
-    products hone chahiye, LLM sirf pehle 3 hi extract kar paya (page
-    ke upar wala visible portion). Fix: scrolls badhaya (5) aur prompt
-    ko explicit kiya ki poori page scroll karke SAARE products extract
-    kare, sirf pehli screen wale nahi.
-  - Kohl's: 0 products par 5287 chars real content (JS render kaam
-    kar raha hai) - LLM ne products samjhe nahi, prompt clarity issue.
-  - Hoka: 502, Gilt: 404, Rue La La: exception - teeno ScrapeGraphAI
-    backend ki transient instability lagti hai (ek hi run mein teen
-    alag providers-side errors) - gilt.com khud up hai (verified),
-    isliye ye likely retry-later cases hain, permanent block nahi.
+NOTE (2026-09-04): "is_marketplace": True config wale sites (GOAT,
+StockX, Sephora, Kohl's, Gilt, Rue La La, SecretSales, Zappos, Ulta)
+khud brand nahi hain - bohot saare alag brands bechte hain. Pehle
+"brand" field galti se site-name (jaise "goat") ban jaata tha. Ab
+brand_extractor.py se product NAME ke andar se asli brand nikaalte
+hain (default prompt already "include brand name if visible" bolta
+hai name field mein, isliye extraction reliable hona chahiye). Agar
+koi known brand na mile, brand None reh jaata hai - Shopify push ke
+time site-name pe fallback ho jaata hai, koi crash nahi hota.
 
 NOTE: Ye scraperapi_scraper.py ka replacement nahi hai - MK/Coach jaise
 Akamai-protected sites ke liye ScraperAPI hi better hai (unka core
@@ -54,6 +49,8 @@ from datetime import datetime, timezone
 
 import requests
 
+from brand_extractor import extract_brand
+
 SGAI_EXTRACT_URL = "https://v2-api.scrapegraphai.com/api/extract"
 MAX_RETRIES = 3  # pehli try + 2 retries agar 0 products mile
 MIN_CONTENT_SIZE_WARNING = 2000  # is se kam chunk size = likely blocked/interstitial page
@@ -64,10 +61,12 @@ DEFAULT_PROMPT = (
     "stop after the first few visible products, keep going until you "
     "have captured all products loaded on the page (this could be "
     "dozens or hundreds of items). For each product return: name "
-    "(include brand name if visible), price (numeric value only, no "
-    "currency symbol), currency code (e.g. USD, GBP), product_url (full "
-    "absolute URL), image_url (full absolute URL), sku or product id if "
-    "visible, and in_stock (true unless explicitly marked sold out/"
+    "(include brand name if visible), brand (the manufacturer/brand name "
+    "shown for this specific product, e.g. 'Supreme' or 'Nike' - NOT the "
+    "name of the website/marketplace itself), price (numeric value only, "
+    "no currency symbol), currency code (e.g. USD, GBP), product_url "
+    "(full absolute URL), image_url (full absolute URL), sku or product "
+    "id if visible, and in_stock (true unless explicitly marked sold out/"
     "unavailable). Return this as a JSON array under a top-level "
     "\"products\" key. Skip banners, recommendations, or non-product tiles. "
     "Be exhaustive - a partial list is not acceptable."
@@ -148,6 +147,7 @@ def normalize_products(raw_json, config):
         results.append({
             "sku": sku,
             "name": name,
+            "_llm_brand": item.get("brand"),  # marketplace brand-extraction ke liye
             "price": to_num(item.get("price")),
             "in_stock": bool(item.get("in_stock", True)),
             "product_url": item.get("product_url") or item.get("url"),
@@ -166,6 +166,7 @@ def scrape_site_scrapegraph(config):
     debug ke liye (chhota content size = likely blocked/interstitial page)."""
     prompt = config.get("scrape_prompt", DEFAULT_PROMPT)
     fetch_config = config.get("fetch_config")
+    is_marketplace = bool(config.get("is_marketplace"))
     all_products = []
 
     for url in config["start_urls"]:
@@ -206,7 +207,14 @@ def scrape_site_scrapegraph(config):
         for p in products:
             p["site"] = config["name"]
             p["category"] = "uncategorized"
-            p["brand"] = config["name"]
+
+            if is_marketplace:
+                llm_brand = p.pop("_llm_brand", None)
+                p["brand"] = llm_brand or extract_brand(p.get("name"))
+            else:
+                p.pop("_llm_brand", None)
+                p["brand"] = config["name"]
+
             p["scraped_at"] = datetime.now(timezone.utc).isoformat()
         all_products.extend(products)
         print(f"  {url} -> {len(products)} products")
