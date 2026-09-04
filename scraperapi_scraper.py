@@ -28,6 +28,15 @@ NOTE #3: Kuch sites (Zappos) apna product data schema.org JSON-LD
 <script type="application/ld+json"> blocks mein embed karte hain -
 CSS selectors ki zaroorat hi nahi. Config mein "use_jsonld": True
 set karo (tile/name/price/link selectors ki zaroorat nahi tab).
+
+NOTE (2026-09-04): "is_marketplace": True config wale sites (GOAT,
+StockX, Sephora, Kohl's, Gilt, Rue La La, SecretSales, Zappos, Ulta)
+khud brand nahi hain - bohot saare alag brands bechte hain. Pehle
+"brand" field galti se site-name (jaise "goat") ban jaata tha. Ab
+brand_extractor.py se product NAME ke andar se asli brand (jaise
+"Supreme", "Nike") nikaalte hain. Agar koi known brand na mile,
+"brand" field None reh jaata hai (Shopify push ke time site-name pe
+hi fallback ho jaata hai - koi crash nahi hota).
 """
 import os
 import re
@@ -38,6 +47,8 @@ from urllib.parse import urlparse
 
 import requests
 from bs4 import BeautifulSoup
+
+from brand_extractor import extract_brand
 
 SCRAPERAPI_URL = "https://api.scraperapi.com/"
 MAX_RETRIES = 3  # pehli try + 2 retries
@@ -114,6 +125,7 @@ def extract_products_from_jsonld(html, base_url, config):
             results.append({
                 "sku": sku,
                 "name": full_name,
+                "_jsonld_brand": brand_name,  # marketplace brand-extraction ke liye use hoga
                 "price": to_num(str(price)) if price else None,
                 "in_stock": True,
                 "product_url": url,
@@ -184,6 +196,8 @@ def scrape_site_scraperapi(config):
     0 products milne pe (soft-block / interstitial page ho sakta hai)
     kuch retries karta hai."""
     all_products = []
+    is_marketplace = bool(config.get("is_marketplace"))
+
     for url in config["start_urls"]:
         html = None
         products = []
@@ -220,7 +234,15 @@ def scrape_site_scraperapi(config):
         for p in products:
             p["site"] = config["name"]
             p["category"] = "uncategorized"
-            p["brand"] = config["name"]
+
+            if is_marketplace:
+                # JSON-LD sites (Zappos) mein brand pehle se mila hota hai
+                jsonld_brand = p.pop("_jsonld_brand", None)
+                p["brand"] = jsonld_brand or extract_brand(p.get("name"))
+            else:
+                p.pop("_jsonld_brand", None)
+                p["brand"] = config["name"]
+
             p["scraped_at"] = datetime.now(timezone.utc).isoformat()
         all_products.extend(products)
         print(f"  {url} -> {len(products)} products")
