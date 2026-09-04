@@ -24,6 +24,10 @@ scrapegraph_scraper.py) is flag ko dekh ke brand_extractor.py se
 product NAME se asli brand nikaalta hai. Single-brand sites
 (michaelkors, coach, katespade, lululemon, on, hoka) ko is flag ki
 zaroorat nahi - unka apna naam hi sahi brand hai.
+
+NOTE (2026-09-04) #2: Nordstrom Rack add kiya - Nordstrom ka off-price
+sister-brand, "up to 70% off top brands" - confirmed multi-brand,
+isliye "is_marketplace": True.
 """
 
 # ScrapeGraphAI ke liye - JS-rendering + stealth mode + scrolling,
@@ -177,6 +181,18 @@ SITES = [
     {
         "name": "ruelala",
         "start_urls": ["https://www.ruelala.com/boutique/women"],
+        "use_scrapegraph": True,
+        "fetch_config": STEALTH_FETCH_CONFIG,
+        "currency": "USD",
+        "is_marketplace": True,
+    },
+    {
+        "name": "nordstromrack",
+        "start_urls": [
+            "https://www.nordstromrack.com/shop/women",
+            "https://www.nordstromrack.com/shop/women/handbags",
+            "https://www.nordstromrack.com/shop/women/shoes",
+        ],
         "use_scrapegraph": True,
         "fetch_config": STEALTH_FETCH_CONFIG,
         "currency": "USD",
