@@ -1,0 +1,35 @@
+name: Fix Marketplace Brands
+
+on:
+  workflow_dispatch:
+    inputs:
+      batch_size:
+        description: 'Ek run mein kitne products fix karne hain'
+        required: false
+        default: '500'
+
+jobs:
+  fix-brands:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install dependencies
+        run: pip install requests supabase
+
+      - name: Fix marketplace brands
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}
+          SHOPIFY_STORE_DOMAIN: ${{ secrets.SHOPIFY_STORE_DOMAIN }}
+          SHOPIFY_CLIENT_ID: ${{ secrets.SHOPIFY_CLIENT_ID }}
+          SHOPIFY_CLIENT_SECRET: ${{ secrets.SHOPIFY_CLIENT_SECRET }}
+          BATCH_SIZE: ${{ github.event.inputs.batch_size || '500' }}
+        run: python fix_marketplace_brands.py
