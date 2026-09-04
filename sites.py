@@ -10,22 +10,20 @@ successfully kaam bhi kiya (MK, Coach, StockX, GOAT, On, Ulta,
 SecretSales, Zappos sab working the).
 
 NOTE (2026-09-02): BADA switch - ScraperAPI ka trial plan 100% credits
-khatam ho gaya ("You've exhausted your credits"), sabhi 10
-ScraperAPI-based sites ek saath fail hone lage (403 from api.scraperapi.com
-khud, target site se nahi). User ne ScrapeGraphAI (alag provider, alag
-credit pool) try karne bola - saare ScraperAPI sites ko ScrapeGraphAI pe
-switch kar diya: michaelkors, coach, katespade, lululemon, stockx, goat,
-on, ultabeauty, secretsales, zappos. CSS selectors ki zaroorat nahi
-ScrapeGraphAI mein (LLM khud samajh leta hai page se products nikalna),
-isliye sabke configs simplify ho gaye.
+khatam ho gaya, sabhi ScraperAPI-based sites ScrapeGraphAI pe switch
+kiye.
 
-CAVEAT: ScrapeGraphAI ka apna free tier bhi sirf 500 credits hai -
-itni saari sites + categories try karne se ye bhi jaldi khatam ho
-sakta hai. Agar ye bhi fail ho, dono providers (ScraperAPI paid upgrade,
-ScrapeGraphAI paid upgrade) mein se koi ek lena padega long-term ke liye
-Akamai-protected sites (MK/Coach/StockX/GOAT) ke liye - Shopify-based
-50+ brands bilkul unaffected rehte hain (wo alag, free scraper use
-karte hain).
+NOTE (2026-09-04): BADA data-quality fix - "is_marketplace": True flag
+add kiya un sites pe jo khud brand NAHI hain, balki multiple alag-alag
+brands bechte hain (GOAT/StockX pe Supreme/Nike/Adidas sab milte hain,
+Sephora/Ulta pe bohot saare beauty brands, Gilt/RueLala/SecretSales
+multi-brand flash-sale sites hain, Zappos multi-brand shoe retailer
+hai). Pehle in sabka "brand" field galti se site-name (jaise "goat")
+ban jaata tha - ab scraper (scraperapi_scraper.py /
+scrapegraph_scraper.py) is flag ko dekh ke brand_extractor.py se
+product NAME se asli brand nikaalta hai. Single-brand sites
+(michaelkors, coach, katespade, lululemon, on, hoka) ko is flag ki
+zaroorat nahi - unka apna naam hi sahi brand hai.
 """
 
 # ScrapeGraphAI ke liye - JS-rendering + stealth mode + scrolling,
@@ -33,8 +31,7 @@ karte hain).
 STEALTH_FETCH_CONFIG = {"mode": "js", "stealth": True, "wait": 2000, "scrolls": 5}
 
 SITES = [
-    # MK/Coach best-sellers hain (2026-09-01). ScrapeGraphAI pe switch
-    # kiya (2026-09-02) - ScraperAPI credits khatam ho gaye the.
+    # Single-brand sites - inka apna naam hi sahi brand hai
     {
         "name": "michaelkors",
         "start_urls": [
@@ -84,6 +81,9 @@ SITES = [
         "fetch_config": STEALTH_FETCH_CONFIG,
         "currency": "USD",
     },
+
+    # MARKETPLACE sites (2026-09-04) - multiple brands bechte hain,
+    # "is_marketplace": True se product-name se real brand nikalta hai
     {
         "name": "stockx",
         "start_urls": [
@@ -96,6 +96,7 @@ SITES = [
         "use_scrapegraph": True,
         "fetch_config": STEALTH_FETCH_CONFIG,
         "currency": "USD",
+        "is_marketplace": True,
     },
     {
         "name": "goat",
@@ -108,6 +109,7 @@ SITES = [
         "use_scrapegraph": True,
         "fetch_config": STEALTH_FETCH_CONFIG,
         "currency": "USD",
+        "is_marketplace": True,
     },
     {
         "name": "on",
@@ -122,6 +124,7 @@ SITES = [
         "use_scrapegraph": True,
         "fetch_config": STEALTH_FETCH_CONFIG,
         "currency": "USD",
+        "is_marketplace": True,
     },
     {
         "name": "secretsales",
@@ -129,6 +132,7 @@ SITES = [
         "use_scrapegraph": True,
         "fetch_config": STEALTH_FETCH_CONFIG,
         "currency": "GBP",
+        "is_marketplace": True,
     },
     {
         "name": "zappos",
@@ -136,15 +140,16 @@ SITES = [
         "use_scrapegraph": True,
         "fetch_config": STEALTH_FETCH_CONFIG,
         "currency": "USD",
+        "is_marketplace": True,
     },
 
-    # Ye pehle se hi ScrapeGraphAI use kar rahe the
     {
         "name": "sephora",
         "start_urls": ["https://www.sephora.com/shop/skincare"],
         "use_scrapegraph": True,
         "fetch_config": STEALTH_FETCH_CONFIG,
         "currency": "USD",
+        "is_marketplace": True,
     },
     {
         "name": "kohls",
@@ -152,6 +157,7 @@ SITES = [
         "use_scrapegraph": True,
         "fetch_config": STEALTH_FETCH_CONFIG,
         "currency": "USD",
+        "is_marketplace": True,
     },
     {
         "name": "hoka",
@@ -166,6 +172,7 @@ SITES = [
         "use_scrapegraph": True,
         "fetch_config": STEALTH_FETCH_CONFIG,
         "currency": "USD",
+        "is_marketplace": True,
     },
     {
         "name": "ruelala",
@@ -173,6 +180,7 @@ SITES = [
         "use_scrapegraph": True,
         "fetch_config": STEALTH_FETCH_CONFIG,
         "currency": "USD",
+        "is_marketplace": True,
     },
 
     # Handbags & Leather Goods
