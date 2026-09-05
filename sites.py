@@ -15,23 +15,17 @@ kiye.
 
 NOTE (2026-09-04): BADA data-quality fix - "is_marketplace": True flag
 add kiya un sites pe jo khud brand NAHI hain, balki multiple alag-alag
-brands bechte hain (GOAT/StockX pe Supreme/Nike/Adidas sab milte hain,
-Sephora/Ulta pe bohot saare beauty brands, Gilt/RueLala/SecretSales
-multi-brand flash-sale sites hain, Zappos multi-brand shoe retailer
-hai). Pehle in sabka "brand" field galti se site-name (jaise "goat")
-ban jaata tha - ab scraper (scraperapi_scraper.py /
-scrapegraph_scraper.py) is flag ko dekh ke brand_extractor.py se
-product NAME se asli brand nikaalta hai. Single-brand sites
-(michaelkors, coach, katespade, lululemon, on, hoka) ko is flag ki
-zaroorat nahi - unka apna naam hi sahi brand hai.
+brands bechte hain. Single-brand sites (michaelkors, coach, katespade,
+lululemon, on, hoka, toryburch, ralphlauren, marcjacobs, furla) ko is
+flag ki zaroorat nahi - unka apna naam hi sahi brand hai.
 
-NOTE (2026-09-04) #2: Nordstrom Rack, YOOX, Flannels add kiye - teeno
-multi-brand luxury retailers hain (is_marketplace: True). NOTE: is
-waqt (2026-09-04) ScraperAPI aur ScrapeGraphAI dono ke credits khatam
-hain - in teeno (aur baaki saari use_scrapegraph:True sites) ka test
-turant 402/403 dega jab tak credits refresh na hon ya paid tier na
-liya jaaye. Config ready hai, bas providers ka credit chahiye chalane
-ke liye.
+NOTE (2026-09-04) #2: Nordstrom Rack, YOOX, Flannels (marketplace) aur
+Tory Burch, Ralph Lauren, Marc Jacobs, Furla (single-brand) add kiye.
+NOTE: is waqt (2026-09-04) ScraperAPI aur ScrapeGraphAI dono ke credits
+khatam hain - in sabka (aur baaki saari use_scrapegraph:True sites) ka
+test turant 402/403 dega jab tak credits refresh na hon ya paid tier
+na liya jaaye. Config ready hai, bas providers ka credit chahiye
+chalane ke liye.
 """
 
 # ScrapeGraphAI ke liye - JS-rendering + stealth mode + scrolling,
@@ -84,6 +78,45 @@ SITES = [
             "https://shop.lululemon.com/c/bestsellers-accessories/n14w56znskl",
             "https://shop.lululemon.com/c/women-whats-new/n16o10zq0cf",
             "https://shop.lululemon.com/c/women-work-clothes/n14rn9z4uwk",
+        ],
+        "use_scrapegraph": True,
+        "fetch_config": STEALTH_FETCH_CONFIG,
+        "currency": "USD",
+    },
+    {
+        "name": "toryburch",
+        "start_urls": [
+            "https://www.toryburch.com/en-us/handbags/",
+            "https://www.toryburch.com/en-us/sale/shoes/",
+        ],
+        "use_scrapegraph": True,
+        "fetch_config": STEALTH_FETCH_CONFIG,
+        "currency": "USD",
+    },
+    {
+        "name": "ralphlauren",
+        "start_urls": [
+            "https://www.ralphlauren.com/women-accessories-handbags",
+            "https://www.ralphlauren.com/women-handbags-totes",
+        ],
+        "use_scrapegraph": True,
+        "fetch_config": STEALTH_FETCH_CONFIG,
+        "currency": "USD",
+    },
+    {
+        "name": "marcjacobs",
+        "start_urls": [
+            "https://www.marcjacobs.com/us-en/the-marc-jacobs/bags/view-all/",
+        ],
+        "use_scrapegraph": True,
+        "fetch_config": STEALTH_FETCH_CONFIG,
+        "currency": "USD",
+    },
+    {
+        "name": "furla",
+        "start_urls": [
+            "https://www.furla.com/us/en/eshop/women/",
+            "https://www.furla.com/us/en/eshop/women/bags/",
         ],
         "use_scrapegraph": True,
         "fetch_config": STEALTH_FETCH_CONFIG,
