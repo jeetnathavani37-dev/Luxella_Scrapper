@@ -15,17 +15,16 @@ kiye.
 
 NOTE (2026-09-04): BADA data-quality fix - "is_marketplace": True flag
 add kiya un sites pe jo khud brand NAHI hain, balki multiple alag-alag
-brands bechte hain. Single-brand sites (michaelkors, coach, katespade,
-lululemon, on, hoka, toryburch, ralphlauren, marcjacobs, furla) ko is
-flag ki zaroorat nahi - unka apna naam hi sahi brand hai.
+brands bechte hain. Single-brand sites ko is flag ki zaroorat nahi -
+unka apna naam hi sahi brand hai.
 
 NOTE (2026-09-04) #2: Nordstrom Rack, YOOX, Flannels (marketplace) aur
-Tory Burch, Ralph Lauren, Marc Jacobs, Furla (single-brand) add kiye.
-NOTE: is waqt (2026-09-04) ScraperAPI aur ScrapeGraphAI dono ke credits
-khatam hain - in sabka (aur baaki saari use_scrapegraph:True sites) ka
-test turant 402/403 dega jab tak credits refresh na hon ya paid tier
-na liya jaaye. Config ready hai, bas providers ka credit chahiye
-chalane ke liye.
+Tory Burch, Ralph Lauren, Marc Jacobs, Furla, Lands' End (single-brand)
+add kiye. NOTE: is waqt (2026-09-04) ScraperAPI aur ScrapeGraphAI dono
+ke credits khatam hain - in sabka (aur baaki saari use_scrapegraph:True
+sites) ka test turant 402/403 dega jab tak credits refresh na hon ya
+paid tier na liya jaaye. Config ready hai, bas providers ka credit
+chahiye chalane ke liye.
 """
 
 # ScrapeGraphAI ke liye - JS-rendering + stealth mode + scrolling,
@@ -117,6 +116,16 @@ SITES = [
         "start_urls": [
             "https://www.furla.com/us/en/eshop/women/",
             "https://www.furla.com/us/en/eshop/women/bags/",
+        ],
+        "use_scrapegraph": True,
+        "fetch_config": STEALTH_FETCH_CONFIG,
+        "currency": "USD",
+    },
+    {
+        "name": "landsend",
+        "start_urls": [
+            "https://www.landsend.com/shop/womens/S-y5c-175p-xec",
+            "https://www.landsend.com/shop/womens-clothing/S-xez-y5c-xec",
         ],
         "use_scrapegraph": True,
         "fetch_config": STEALTH_FETCH_CONFIG,
