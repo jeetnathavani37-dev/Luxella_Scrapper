@@ -35,6 +35,16 @@ hai name field mein, isliye extraction reliable hona chahiye). Agar
 koi known brand na mile, brand None reh jaata hai - Shopify push ke
 time site-name pe fallback ho jaata hai, koi crash nahi hota.
 
+NOTE (2026-09-05): BADA gap fix - DEFAULT_PROMPT "description" field
+kabhi maangta hi nahi tha! Isliye GOAT, StockX, SecretSales jaise saari
+ScrapeGraphAI-based sites ke 100% products mein description missing
+tha (Shopify pe generic fallback text dikh raha tha "Sourced via
+Luxella" jaisa). Fix: prompt mein description explicitly add kiya
+(short 1-2 sentence product description, listing page pe jo bhi text
+mile - material, fit, style details). Category-listing pages pe
+zyada detailed description nahi milegi (wo detail-page pe hoti hai),
+but kam se kam kuch real content milega generic fallback ki jagah.
+
 NOTE: Ye scraperapi_scraper.py ka replacement nahi hai - MK/Coach jaise
 Akamai-protected sites ke liye ScraperAPI hi better hai (unka core
 business hi bot-detection bypass karna hai). ScrapeGraphAI zyada useful
@@ -63,10 +73,13 @@ DEFAULT_PROMPT = (
     "dozens or hundreds of items). For each product return: name "
     "(include brand name if visible), brand (the manufacturer/brand name "
     "shown for this specific product, e.g. 'Supreme' or 'Nike' - NOT the "
-    "name of the website/marketplace itself), price (numeric value only, "
-    "no currency symbol), currency code (e.g. USD, GBP), product_url "
-    "(full absolute URL), image_url (full absolute URL), sku or product "
-    "id if visible, and in_stock (true unless explicitly marked sold out/"
+    "name of the website/marketplace itself), description (any product "
+    "detail text visible - material, fit, style, color, key features; "
+    "a short 1-3 sentence summary is fine, leave blank if truly none "
+    "visible on this listing page), price (numeric value only, no "
+    "currency symbol), currency code (e.g. USD, GBP), product_url (full "
+    "absolute URL), image_url (full absolute URL), sku or product id if "
+    "visible, and in_stock (true unless explicitly marked sold out/"
     "unavailable). Return this as a JSON array under a top-level "
     "\"products\" key. Skip banners, recommendations, or non-product tiles. "
     "Be exhaustive - a partial list is not acceptable."
@@ -144,10 +157,15 @@ def normalize_products(raw_json, config):
         if not (name or sku):
             continue
 
+        description = item.get("description")
+        if description:
+            description = f"<p>{description}</p>"
+
         results.append({
             "sku": sku,
             "name": name,
             "_llm_brand": item.get("brand"),  # marketplace brand-extraction ke liye
+            "description": description,
             "price": to_num(item.get("price")),
             "in_stock": bool(item.get("in_stock", True)),
             "product_url": item.get("product_url") or item.get("url"),
