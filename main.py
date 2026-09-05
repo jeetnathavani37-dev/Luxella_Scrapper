@@ -6,8 +6,19 @@ saari scrape nahi ho paati. Pehle SITES list fixed order mein process
 hoti thi - shuru wali sites hamesha scrape hoti thi, end wali (jaise
 aloyoga) hamesha timeout se pehle chhoot jaati thi. Fix: ab Supabase se
 har site ka last scraped_at fetch karke, sabse purana-scraped pehle
-process karte hain - fair rotation, koi site permanently starve nahi
-hoti.
+process karte hain.
+
+NOTE (2026-09-05): BADA follow-up fix - upar wale fix mein "kabhi
+scrape na hui" (naya-added) sites ko HAMESHA sabse pehle priority milti
+thi (empty sort-key sabse pehle aata hai). Jab is session mein 30+ naye
+brands add kiye (kai credits-khatam hone ki wajah se fail ho rahe the),
+wo saare sites HAMESHA queue ke shuru mein aa gaye - matlab AloYoga
+(jo genuinely purani-scraped thi, but at least kabhi successfully
+scrape hui thi) permanently peeche reh gayi, kabhi bhi turn hi nahi
+aaya. Fix: "kabhi-scrape-na-hui" aur "purani-scraped-but-kaam-karti-
+hain" sites ko INTERLEAVE karte hain (mix karke alternate karte hain)
+- taaki koi bhi group dusre ko permanently starve na kare. Ratio:
+har 2 "purani-stale" sites ke baad 1 "kabhi-nahi" site try hoti hai.
 """
 import os
 import re
@@ -87,15 +98,33 @@ def get_staleness_order(sites):
                 if last_scraped[site_name] is None or ts > last_scraped[site_name]:
                     last_scraped[site_name] = ts
 
-        def sort_key(config):
-            ts = last_scraped.get(config["name"])
-            return ts or ""
+        # Do groups: jo kabhi successfully scrape hui hain (real date se
+        # sort - purani pehle), aur jo kabhi nahi hui (ye group ko
+        # permanently pehle aane se rokna hai - warna naye/failing sites
+        # hamesha purane working sites (jaise aloyoga) ko block kar dete
+        # hain).
+        has_data = [s for s in sites if last_scraped.get(s["name"])]
+        never_scraped = [s for s in sites if not last_scraped.get(s["name"])]
 
-        sorted_sites = sorted(sites, key=sort_key)
-        print("Sites priority order (staleness-based):")
-        for s in sorted_sites[:10]:
+        has_data.sort(key=lambda c: last_scraped.get(c["name"]) or "")
+
+        # Interleave: har 2 "has_data" (purani-stale) site ke baad 1
+        # "never_scraped" site - dono group ko fair turn milta hai.
+        merged = []
+        hi, ni = 0, 0
+        while hi < len(has_data) or ni < len(never_scraped):
+            for _ in range(2):
+                if hi < len(has_data):
+                    merged.append(has_data[hi])
+                    hi += 1
+            if ni < len(never_scraped):
+                merged.append(never_scraped[ni])
+                ni += 1
+
+        print("Sites priority order (interleaved staleness):")
+        for s in merged[:12]:
             print(f"  {s['name']}: last scraped = {last_scraped.get(s['name']) or 'KABHI NAHI'}")
-        return sorted_sites
+        return merged
     except Exception as e:
         print(f"[WARNING] Staleness sorting fail hui ({e}) - fixed order use kar rahe hain.")
         return sites
