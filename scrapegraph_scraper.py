@@ -35,15 +35,18 @@ hai name field mein, isliye extraction reliable hona chahiye). Agar
 koi known brand na mile, brand None reh jaata hai - Shopify push ke
 time site-name pe fallback ho jaata hai, koi crash nahi hota.
 
-NOTE (2026-09-05): BADA gap fix - DEFAULT_PROMPT "description" field
-kabhi maangta hi nahi tha! Isliye GOAT, StockX, SecretSales jaise saari
-ScrapeGraphAI-based sites ke 100% products mein description missing
-tha (Shopify pe generic fallback text dikh raha tha "Sourced via
-Luxella" jaisa). Fix: prompt mein description explicitly add kiya
-(short 1-2 sentence product description, listing page pe jo bhi text
-mile - material, fit, style details). Category-listing pages pe
-zyada detailed description nahi milegi (wo detail-page pe hoti hai),
-but kam se kam kuch real content milega generic fallback ki jagah.
+NOTE (2026-09-05): BADA gap fix #1 - DEFAULT_PROMPT "description" field
+kabhi maangta hi nahi tha! Fix kiya - prompt mein description explicitly
+add kiya.
+
+NOTE (2026-09-05) #2: BADA gap fix #2 - prompt SIZE ya COLOR bhi kabhi
+nahi maangta tha, isliye multi-size products (jaise sneakers, clothing)
+ka size-selector Shopify pe kabhi nahi banta tha. Ab prompt "sizes"
+(available size options ka array) aur "color" bhi maangta hai. Agar
+sizes milte hain, "variants" list banate hain (shopify_scraper.py ke
+"variants" format se match karte hue - size, sku, price, in_stock har
+size ke liye) taaki shopify_push.py ka existing multi-size-variant
+logic seedha kaam kare, kuch aur badalna na pade.
 
 NOTE: Ye scraperapi_scraper.py ka replacement nahi hai - MK/Coach jaise
 Akamai-protected sites ke liye ScraperAPI hi better hai (unka core
@@ -74,15 +77,19 @@ DEFAULT_PROMPT = (
     "(include brand name if visible), brand (the manufacturer/brand name "
     "shown for this specific product, e.g. 'Supreme' or 'Nike' - NOT the "
     "name of the website/marketplace itself), description (any product "
-    "detail text visible - material, fit, style, color, key features; "
-    "a short 1-3 sentence summary is fine, leave blank if truly none "
-    "visible on this listing page), price (numeric value only, no "
-    "currency symbol), currency code (e.g. USD, GBP), product_url (full "
-    "absolute URL), image_url (full absolute URL), sku or product id if "
-    "visible, and in_stock (true unless explicitly marked sold out/"
-    "unavailable). Return this as a JSON array under a top-level "
-    "\"products\" key. Skip banners, recommendations, or non-product tiles. "
-    "Be exhaustive - a partial list is not acceptable."
+    "detail text visible - material, fit, style, key features; a short "
+    "1-3 sentence summary is fine, leave blank if truly none visible on "
+    "this listing page), color (the primary color/colorway shown, if "
+    "any), sizes (an array of available size options shown for this "
+    "product, e.g. ['S','M','L'] or ['7','7.5','8','9'] for shoes - "
+    "leave as an empty array if the product has no size options), price "
+    "(numeric value only, no currency symbol), currency code (e.g. USD, "
+    "GBP), product_url (full absolute URL), image_url (full absolute "
+    "URL), sku or product id if visible, and in_stock (true unless "
+    "explicitly marked sold out/unavailable). Return this as a JSON "
+    "array under a top-level \"products\" key. Skip banners, "
+    "recommendations, or non-product tiles. Be exhaustive - a partial "
+    "list is not acceptable."
 )
 
 
@@ -139,6 +146,31 @@ def fetch_products(url, prompt, fetch_config=None, timeout=120):
     return body
 
 
+def build_variants_from_sizes(item):
+    """LLM ne "sizes" array diya ho to, shopify_scraper.py ke "variants"
+    format mein convert karta hai - taaki shopify_push.py ka existing
+    multi-size logic seedha reuse ho sake, kuch alag se banane ki
+    zaroorat nahi."""
+    sizes = item.get("sizes")
+    if not sizes or not isinstance(sizes, list) or len(sizes) < 2:
+        return None
+
+    base_price = to_num(item.get("price"))
+    base_sku = item.get("sku") or item.get("product_id")
+
+    variants_out = []
+    for size in sizes:
+        if not size:
+            continue
+        variants_out.append({
+            "size": str(size),
+            "sku": f"{base_sku}-{size}" if base_sku else None,
+            "price": base_price,
+            "in_stock": True,  # listing page pe per-size stock rarely pata chalta hai
+        })
+    return variants_out if len(variants_out) > 1 else None
+
+
 def normalize_products(raw_json, config):
     """v2 extract ke 'json' field ko baaki scrapers jaisa hi uniform
     product-dict schema mein convert karta hai."""
@@ -166,6 +198,8 @@ def normalize_products(raw_json, config):
             "name": name,
             "_llm_brand": item.get("brand"),  # marketplace brand-extraction ke liye
             "description": description,
+            "color": item.get("color") or None,
+            "variants": build_variants_from_sizes(item),
             "price": to_num(item.get("price")),
             "in_stock": bool(item.get("in_stock", True)),
             "product_url": item.get("product_url") or item.get("url"),
