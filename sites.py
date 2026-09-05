@@ -18,14 +18,16 @@ add kiya un sites pe jo khud brand NAHI hain, balki multiple alag-alag
 brands bechte hain. Single-brand sites ko is flag ki zaroorat nahi -
 unka apna naam hi sahi brand hai.
 
-NOTE (2026-09-04) #2: Nordstrom Rack, YOOX, Flannels (marketplace) aur
-Tory Burch, Ralph Lauren, Marc Jacobs, Furla, Lands' End, Athleta,
-Longchamp, J.Crew Factory (single-brand) add kiye. NOTE: is waqt
+NOTE (2026-09-04) #2: Nordstrom Rack, YOOX, Flannels, Maisonette,
+Scheels (marketplace) aur Tory Burch, Ralph Lauren, Marc Jacobs, Furla,
+Lands' End, Athleta, Longchamp, J.Crew Factory, Pandora, DKNY, Oakley,
+Biosilk, Disney Store, Oriental Trading, Funko (single-brand) add kiye.
+I Love Dooney aur Swoveralls dono CONFIRMED Shopify hain - platform:
+shopify use kiya (koi credits ki zaroorat nahi). NOTE: is waqt
 (2026-09-04) ScraperAPI aur ScrapeGraphAI dono ke credits khatam hain -
-in sabka (aur baaki saari use_scrapegraph:True sites) ka test turant
-402/403 dega jab tak credits refresh na hon ya paid tier na liya
-jaaye. Config ready hai, bas providers ka credit chahiye chalane ke
-liye.
+baaki saari use_scrapegraph:True sites ka test turant 402/403 dega jab
+tak credits refresh na hon ya paid tier na liya jaaye. Config ready
+hai, bas providers ka credit chahiye chalane ke liye.
 """
 
 # ScrapeGraphAI ke liye - JS-rendering + stealth mode + scrolling,
@@ -156,6 +158,72 @@ SITES = [
             "https://factory.jcrew.com/plp/womens/categories/clothing",
             "https://factory.jcrew.com/plp/womens/features/new-arrivals",
         ],
+        "use_scrapegraph": True,
+        "fetch_config": STEALTH_FETCH_CONFIG,
+        "currency": "USD",
+    },
+    {
+        "name": "ilovedooney",
+        "platform": "shopify",
+        "domain": "https://www.ilovedooney.com",
+        "category": "handbags",
+        "currency": "USD",
+    },
+    {
+        "name": "pandora",
+        "start_urls": ["https://us.pandora.net/en/"],
+        "use_scrapegraph": True,
+        "fetch_config": STEALTH_FETCH_CONFIG,
+        "currency": "USD",
+    },
+    {
+        "name": "dkny",
+        "start_urls": ["https://www.dkny.com/"],
+        "use_scrapegraph": True,
+        "fetch_config": STEALTH_FETCH_CONFIG,
+        "currency": "USD",
+    },
+    {
+        "name": "oakley",
+        "start_urls": ["https://www.oakley.com/en-us/"],
+        "use_scrapegraph": True,
+        "fetch_config": STEALTH_FETCH_CONFIG,
+        "currency": "USD",
+    },
+    {
+        "name": "biosilk",
+        "start_urls": ["https://biosilkbrand.com/"],
+        "use_scrapegraph": True,
+        "fetch_config": STEALTH_FETCH_CONFIG,
+        "currency": "USD",
+    },
+    {
+        "name": "swoveralls",
+        "platform": "shopify",
+        "domain": "https://swoveralls.com",
+        "category": "apparel",
+        "currency": "USD",
+    },
+    {
+        "name": "disneystore",
+        "start_urls": [
+            "https://www.disneystore.com/clothing/women/",
+            "https://www.disneystore.com/franchises/disney/",
+        ],
+        "use_scrapegraph": True,
+        "fetch_config": STEALTH_FETCH_CONFIG,
+        "currency": "USD",
+    },
+    {
+        "name": "orientaltrading",
+        "start_urls": ["https://www.orientaltrading.com/"],
+        "use_scrapegraph": True,
+        "fetch_config": STEALTH_FETCH_CONFIG,
+        "currency": "USD",
+    },
+    {
+        "name": "funko",
+        "start_urls": ["https://funko.com/"],
         "use_scrapegraph": True,
         "fetch_config": STEALTH_FETCH_CONFIG,
         "currency": "USD",
@@ -295,6 +363,22 @@ SITES = [
         "use_scrapegraph": True,
         "fetch_config": STEALTH_FETCH_CONFIG,
         "currency": "GBP",
+        "is_marketplace": True,
+    },
+    {
+        "name": "maisonette",
+        "start_urls": ["https://www.maisonette.com/"],
+        "use_scrapegraph": True,
+        "fetch_config": STEALTH_FETCH_CONFIG,
+        "currency": "USD",
+        "is_marketplace": True,
+    },
+    {
+        "name": "scheels",
+        "start_urls": ["https://www.scheels.com/"],
+        "use_scrapegraph": True,
+        "fetch_config": STEALTH_FETCH_CONFIG,
+        "currency": "USD",
         "is_marketplace": True,
     },
 
