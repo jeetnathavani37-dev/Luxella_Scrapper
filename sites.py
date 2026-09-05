@@ -24,11 +24,21 @@ Ralph Lauren, Marc Jacobs, Furla, Lands' End, Athleta, Longchamp,
 J.Crew Factory, Pandora, DKNY, Oakley, Biosilk, Disney Store, Oriental
 Trading, Funko (single-brand) add kiye. I Love Dooney aur Swoveralls
 dono CONFIRMED Shopify hain - platform: shopify use kiya (koi credits
-ki zaroorat nahi). NOTE: is waqt (2026-09-04) ScraperAPI aur
-ScrapeGraphAI dono ke credits khatam hain - baaki saari
-use_scrapegraph:True sites ka test turant 402/403 dega jab tak credits
-refresh na hon ya paid tier na liya jaaye. Config ready hai, bas
-providers ka credit chahiye chalane ke liye.
+ki zaroorat nahi).
+
+NOTE (2026-09-05): 8 premium activewear brands add kiye - Vuori
+(CONFIRMED headless-Shopify, products.json abhi bhi accessible hona
+chahiye), Varley, Beyond Yoga, Sweaty Betty, P.E Nation, Nagnata,
+Adanola, Splits59. In sabko platform:shopify try kiya hai (chhoti-medium
+DTC brands typically Shopify pe hoti hain) - agar test mein 0 products
+aaye kisi ek ke liye, matlab wo Shopify nahi hai, ScrapeGraphAI pe
+switch karna hoga.
+
+NOTE: is waqt (2026-09-04/05) ScraperAPI aur ScrapeGraphAI dono ke
+credits khatam hain - saari use_scrapegraph:True sites ka test turant
+402/403 dega jab tak credits refresh na hon ya paid tier na liya
+jaaye. Shopify-platform sites (jaise upar wali 8 activewear brands)
+is issue se affected NAHI hain - turant test ho sakti hain.
 """
 
 # ScrapeGraphAI ke liye - JS-rendering + stealth mode + scrolling,
@@ -229,6 +239,16 @@ SITES = [
         "fetch_config": STEALTH_FETCH_CONFIG,
         "currency": "USD",
     },
+
+    # Premium activewear (2026-09-05)
+    {"name": "vuori", "platform": "shopify", "domain": "https://vuoriclothing.com", "category": "activewear", "currency": "USD"},
+    {"name": "varley", "platform": "shopify", "domain": "https://varley.com", "category": "activewear", "currency": "USD"},
+    {"name": "beyondyoga", "platform": "shopify", "domain": "https://beyondyoga.com", "category": "activewear", "currency": "USD"},
+    {"name": "sweatybetty", "platform": "shopify", "domain": "https://www.sweatybetty.com", "category": "activewear", "currency": "USD"},
+    {"name": "penation", "platform": "shopify", "domain": "https://pe-nation.com", "category": "activewear", "currency": "USD"},
+    {"name": "nagnata", "platform": "shopify", "domain": "https://nagnata.com", "category": "activewear", "currency": "USD"},
+    {"name": "adanola", "platform": "shopify", "domain": "https://www.adanola.com", "category": "activewear", "currency": "GBP"},
+    {"name": "splits59", "platform": "shopify", "domain": "https://splits59.com", "category": "activewear", "currency": "USD"},
 
     # MARKETPLACE sites (2026-09-04) - multiple brands bechte hain,
     # "is_marketplace": True se product-name se real brand nikalta hai
