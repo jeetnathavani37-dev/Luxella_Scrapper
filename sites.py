@@ -19,15 +19,16 @@ brands bechte hain. Single-brand sites ko is flag ki zaroorat nahi -
 unka apna naam hi sahi brand hai.
 
 NOTE (2026-09-04) #2: Nordstrom Rack, YOOX, Flannels, Maisonette,
-Scheels (marketplace) aur Tory Burch, Ralph Lauren, Marc Jacobs, Furla,
-Lands' End, Athleta, Longchamp, J.Crew Factory, Pandora, DKNY, Oakley,
-Biosilk, Disney Store, Oriental Trading, Funko (single-brand) add kiye.
-I Love Dooney aur Swoveralls dono CONFIRMED Shopify hain - platform:
-shopify use kiya (koi credits ki zaroorat nahi). NOTE: is waqt
-(2026-09-04) ScraperAPI aur ScrapeGraphAI dono ke credits khatam hain -
-baaki saari use_scrapegraph:True sites ka test turant 402/403 dega jab
-tak credits refresh na hon ya paid tier na liya jaaye. Config ready
-hai, bas providers ka credit chahiye chalane ke liye.
+Scheels, THECODE (UK), Secret Label (UK) (marketplace) aur Tory Burch,
+Ralph Lauren, Marc Jacobs, Furla, Lands' End, Athleta, Longchamp,
+J.Crew Factory, Pandora, DKNY, Oakley, Biosilk, Disney Store, Oriental
+Trading, Funko (single-brand) add kiye. I Love Dooney aur Swoveralls
+dono CONFIRMED Shopify hain - platform: shopify use kiya (koi credits
+ki zaroorat nahi). NOTE: is waqt (2026-09-04) ScraperAPI aur
+ScrapeGraphAI dono ke credits khatam hain - baaki saari
+use_scrapegraph:True sites ka test turant 402/403 dega jab tak credits
+refresh na hon ya paid tier na liya jaaye. Config ready hai, bas
+providers ka credit chahiye chalane ke liye.
 """
 
 # ScrapeGraphAI ke liye - JS-rendering + stealth mode + scrolling,
@@ -379,6 +380,25 @@ SITES = [
         "use_scrapegraph": True,
         "fetch_config": STEALTH_FETCH_CONFIG,
         "currency": "USD",
+        "is_marketplace": True,
+    },
+    {
+        "name": "thecode",
+        "start_urls": ["https://www.thecode.co.uk/"],
+        "use_scrapegraph": True,
+        "fetch_config": STEALTH_FETCH_CONFIG,
+        "currency": "GBP",
+        "is_marketplace": True,
+    },
+    {
+        "name": "secretlabel",
+        "start_urls": [
+            "https://www.secretlabel.co.uk/",
+            "https://www.secretlabel.co.uk/collections/dresses",
+        ],
+        "use_scrapegraph": True,
+        "fetch_config": STEALTH_FETCH_CONFIG,
+        "currency": "GBP",
         "is_marketplace": True,
     },
 
