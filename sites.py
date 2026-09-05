@@ -19,12 +19,13 @@ brands bechte hain. Single-brand sites ko is flag ki zaroorat nahi -
 unka apna naam hi sahi brand hai.
 
 NOTE (2026-09-04) #2: Nordstrom Rack, YOOX, Flannels (marketplace) aur
-Tory Burch, Ralph Lauren, Marc Jacobs, Furla, Lands' End (single-brand)
-add kiye. NOTE: is waqt (2026-09-04) ScraperAPI aur ScrapeGraphAI dono
-ke credits khatam hain - in sabka (aur baaki saari use_scrapegraph:True
-sites) ka test turant 402/403 dega jab tak credits refresh na hon ya
-paid tier na liya jaaye. Config ready hai, bas providers ka credit
-chahiye chalane ke liye.
+Tory Burch, Ralph Lauren, Marc Jacobs, Furla, Lands' End, Athleta
+(single-brand) add kiye. Athleta Gap Inc ka apna platform hai
+(athleta.gap.com), Shopify nahi. NOTE: is waqt (2026-09-04) ScraperAPI
+aur ScrapeGraphAI dono ke credits khatam hain - in sabka (aur baaki
+saari use_scrapegraph:True sites) ka test turant 402/403 dega jab tak
+credits refresh na hon ya paid tier na liya jaaye. Config ready hai,
+bas providers ka credit chahiye chalane ke liye.
 """
 
 # ScrapeGraphAI ke liye - JS-rendering + stealth mode + scrolling,
@@ -126,6 +127,15 @@ SITES = [
         "start_urls": [
             "https://www.landsend.com/shop/womens/S-y5c-175p-xec",
             "https://www.landsend.com/shop/womens-clothing/S-xez-y5c-xec",
+        ],
+        "use_scrapegraph": True,
+        "fetch_config": STEALTH_FETCH_CONFIG,
+        "currency": "USD",
+    },
+    {
+        "name": "athleta",
+        "start_urls": [
+            "https://athleta.gap.com/browse/new/all-new-arrivals?cid=1006482",
         ],
         "use_scrapegraph": True,
         "fetch_config": STEALTH_FETCH_CONFIG,
