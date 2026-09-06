@@ -26,19 +26,17 @@ Trading, Funko (single-brand) add kiye. I Love Dooney aur Swoveralls
 dono CONFIRMED Shopify hain - platform: shopify use kiya (koi credits
 ki zaroorat nahi).
 
-NOTE (2026-09-05): 8 premium activewear brands add kiye - Vuori
-(CONFIRMED headless-Shopify, products.json abhi bhi accessible hona
-chahiye), Varley, Beyond Yoga, Sweaty Betty, P.E Nation, Nagnata,
-Adanola, Splits59. In sabko platform:shopify try kiya hai (chhoti-medium
-DTC brands typically Shopify pe hoti hain) - agar test mein 0 products
-aaye kisi ek ke liye, matlab wo Shopify nahi hai, ScrapeGraphAI pe
-switch karna hoga.
+NOTE (2026-09-05): 8 premium activewear brands add kiye - Vuori,
+Varley, Beyond Yoga, Sweaty Betty, P.E Nation, Nagnata, Adanola,
+Splits59. Confirmed working (Shopify): Varley, Beyond Yoga, P.E
+Nation, Nagnata, Adanola, Splits59. Vuori aur Sweaty Betty test mein
+0 products aaye (Shopify nahi nikla ya /products.json block hai) -
+inko debug karna baaki hai.
 
-NOTE: is waqt (2026-09-04/05) ScraperAPI aur ScrapeGraphAI dono ke
-credits khatam hain - saari use_scrapegraph:True sites ka test turant
-402/403 dega jab tak credits refresh na hon ya paid tier na liya
-jaaye. Shopify-platform sites (jaise upar wali 8 activewear brands)
-is issue se affected NAHI hain - turant test ho sakti hain.
+NOTE (2026-09-06): kicksmachine HATA DIYA - ye Luxella ka apna B2B
+sourcing partner platform hai (jahan se Jeet khud maal source/sell
+karta hai), competitor-scrape wali site nahi thi. Galti se pehle add
+ho gaya tha.
 """
 
 # ScrapeGraphAI ke liye - JS-rendering + stealth mode + scrolling,
@@ -449,7 +447,6 @@ SITES = [
     # Shoes
     {"name": "nodaleto", "platform": "shopify", "domain": "https://www.nodaleto.com", "category": "shoes", "currency": "USD"},
     {"name": "loefflerrandall", "platform": "shopify", "domain": "https://loefflerrandall.com", "category": "shoes", "currency": "USD"},
-    {"name": "kicksmachine", "platform": "shopify", "domain": "https://www.kicksmachine.com", "category": "shoes", "currency": "INR"},
     {"name": "stevemadden", "platform": "shopify", "domain": "https://www.stevemadden.com", "category": "shoes", "currency": "USD"},
     {"name": "frye", "platform": "shopify", "domain": "https://www.thefryecompany.com", "category": "shoes", "currency": "USD"},
     {"name": "vincecamuto", "platform": "shopify", "domain": "https://www.vincecamuto.com", "category": "shoes", "currency": "USD"},
