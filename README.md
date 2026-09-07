@@ -39,3 +39,11 @@ python main.py
 `.github/workflows/scrape.yml` me `cron` line badlo:
 - Har 6 ghante: `0 */6 * * *`
 - Din me 2 baar (12 ghante): `0 3,15 * * *`
+
+## Akamai BMP generator (experimental, not wired into the scraper)
+`akamai_bmp/` me [xvertile/akamai-bmp-generator](https://github.com/xvertile/akamai-bmp-generator)
+vendor kiya hai — ye Akamai Bot Manager ka **mobile-app SDK** sensor data generate karta
+hai, jo website JS-based sensor data (jo `sites.py` ke Akamai-blocked sites pe lagta hai)
+se bilkul alag protocol hai. Isliye ye `main.py`/`sites.py` ke flow me integrate NAHI
+kiya - sirf experiment ke liye repo me hai. Details, caveats aur usage `akamai_bmp/README.md`
+aur `akamai_bmp_client.py` / `test_akamai_bmp_bypass.py` me.

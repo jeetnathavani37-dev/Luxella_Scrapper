@@ -1,0 +1,40 @@
+name: Test Akamai BMP Bypass (mobile-SDK sensor, experimental)
+
+on:
+  workflow_dispatch:
+
+jobs:
+  test-akamai-bmp:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Checkout repo
+        uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: "1.25"
+
+      - name: Build BMP server
+        run: |
+          cd akamai_bmp
+          go build -o /tmp/akamai-bmp-server ./cmd/akamai-bmp-server
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install Python dependencies
+        run: pip install requests
+
+      - name: Run Akamai BMP bypass experiment
+        run: python test_akamai_bmp_bypass.py
+
+      - name: Upload results artifact
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: akamai-bmp-test-results
+          path: akamai_bmp_test_results.json
