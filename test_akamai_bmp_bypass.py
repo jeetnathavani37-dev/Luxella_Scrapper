@@ -78,29 +78,50 @@ def main():
             print(f"\n=== {target['brand']} ({target['url']}) ===")
 
             baseline = fetch(target["url"])
-            print(f"  baseline (no sensor):  {baseline}")
+            print(f"  1. baseline (default python-requests UA, no sensor):  {baseline}")
 
             try:
                 bmp = client.generate(app="com.example.app", version="3.3.4")
+                android_ua = f"Mozilla/5.0 (Linux; Android {bmp['androidVersion']}; {bmp['model']})"
+            except Exception as e:
+                bmp = None
+                android_ua = None
+                print(f"  BMP generate() failed: {e}")
+
+            # Control: same Android User-Agent, but WITHOUT the sensor header.
+            # Isolates whether a bypass is caused by the sensor data itself or
+            # just by no longer using the dead-giveaway python-requests UA.
+            if android_ua:
+                ua_only = fetch(target["url"], headers={"User-Agent": android_ua})
+            else:
+                ua_only = {"status": "SKIPPED"}
+            print(f"  2. Android UA only, no sensor header:                 {ua_only}")
+
+            if bmp:
                 headers = {
                     "X-acf-sensor-data": bmp["sensor"],
-                    "User-Agent": f"Mozilla/5.0 (Linux; Android {bmp['androidVersion']}; {bmp['model']})",
+                    "User-Agent": android_ua,
                 }
                 with_sensor = fetch(target["url"], headers=headers)
-            except Exception as e:
-                with_sensor = {"status": "EXCEPTION", "error": str(e)}
-            print(f"  with mobile sensor:    {with_sensor}")
+            else:
+                with_sensor = {"status": "SKIPPED"}
+            print(f"  3. Android UA + X-acf-sensor-data (mobile sensor):    {with_sensor}")
+
+            def changed(a, b):
+                return (
+                    a.get("looks_blocked") != b.get("looks_blocked")
+                    if "looks_blocked" in a and "looks_blocked" in b
+                    else None
+                )
 
             results.append({
                 "brand": target["brand"],
                 "url": target["url"],
                 "baseline": baseline,
+                "ua_only_no_sensor": ua_only,
                 "with_mobile_sensor": with_sensor,
-                "sensor_changed_outcome": (
-                    baseline.get("looks_blocked") != with_sensor.get("looks_blocked")
-                    if "looks_blocked" in baseline and "looks_blocked" in with_sensor
-                    else None
-                ),
+                "ua_alone_changed_outcome": changed(baseline, ua_only),
+                "sensor_changed_outcome_vs_ua_only": changed(ua_only, with_sensor),
             })
     finally:
         if server_proc:
@@ -109,11 +130,15 @@ def main():
     print("\n" + "=" * 70)
     print("SUMMARY")
     print("=" * 70)
-    changed = [r for r in results if r["sensor_changed_outcome"]]
+    ua_flips = [r for r in results if r["ua_alone_changed_outcome"]]
+    sensor_flips = [r for r in results if r["sensor_changed_outcome_vs_ua_only"]]
     print(f"Sites tested: {len(results)}")
-    print(f"Sites where the mobile sensor header changed the block outcome: {len(changed)}")
-    if not changed:
-        print("As expected: mobile-app SDK sensor data has no effect on website Akamai.")
+    print(f"Sites where swapping to an Android UA alone (no sensor) changed the outcome: {len(ua_flips)}")
+    print(f"Sites where ADDING the sensor header on top of that UA changed the outcome further: {len(sensor_flips)}")
+    if ua_flips and not sensor_flips:
+        print("=> The bypass is coming from the User-Agent change, NOT the mobile sensor data.")
+    elif sensor_flips:
+        print("=> The sensor header changed outcomes beyond the UA alone - worth digging into further.")
 
     with open("akamai_bmp_test_results.json", "w") as f:
         json.dump(results, f, indent=2)
