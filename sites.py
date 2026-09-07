@@ -34,9 +34,15 @@ Nation, Nagnata, Adanola, Splits59. Vuori aur Sweaty Betty test mein
 inko debug karna baaki hai.
 
 NOTE (2026-09-06): kicksmachine HATA DIYA - ye Luxella ka apna B2B
-sourcing partner platform hai (jahan se Jeet khud maal source/sell
-karta hai), competitor-scrape wali site nahi thi. Galti se pehle add
-ho gaya tha.
+sourcing partner platform hai, competitor-scrape wali site nahi thi.
+
+NOTE (2026-09-07): luxlair HATA DIYA - ye pre-owned/used-goods resale
+marketplace hai (Chanel, Louis Vuitton, Marni jaise "Pre-Owned" items
+bechta hai) - same overselling risk jo foreign resale-platforms
+(Vestiaire jaisi) ke liye discuss kiya tha: unique/limited stock,
+jab tak customer order kare tab tak wo item pehle hi bik chuka ho
+sakta hai. Poora data (9,077 rows, 5,787 Shopify pe pushed the)
+remove_site_data.py se clean kiya.
 """
 
 # ScrapeGraphAI ke liye - JS-rendering + stealth mode + scrolling,
@@ -442,7 +448,6 @@ SITES = [
     {"name": "carmensol", "platform": "shopify", "domain": "https://carmensol.com", "category": "handbags", "currency": "USD"},
     {"name": "songmont", "platform": "shopify", "domain": "https://songmontofficial.com", "category": "handbags", "currency": "USD"},
     {"name": "cambridgesatchel", "platform": "shopify", "domain": "https://us.cambridgesatchel.com", "category": "handbags", "currency": "USD"},
-    {"name": "luxlair", "platform": "shopify", "domain": "https://www.luxlair.com", "category": "handbags", "currency": "USD"},
 
     # Shoes
     {"name": "nodaleto", "platform": "shopify", "domain": "https://www.nodaleto.com", "category": "shoes", "currency": "USD"},
