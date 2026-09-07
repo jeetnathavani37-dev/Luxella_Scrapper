@@ -1,0 +1,14 @@
+# Python
+__pycache__/
+*.pyc
+.venv/
+venv/
+
+# Go (akamai_bmp/)
+akamai_bmp/bin/
+akamai_bmp-server
+*.log
+
+# Test output
+scrapling_akamai_test_results.json
+akamai_bmp_test_results.json
