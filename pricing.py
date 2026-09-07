@@ -19,6 +19,17 @@ retail standard se neeche). Ab MIN_DISCOUNT_PERCENT (35%) se seedha
 compute hota hai: compare_at = selling_price / (1 - 0.35). Isse HAR
 product ka discount display kam se kam ~35% guarantee hota hai
 (rounding ki wajah se thoda zyada bhi dikh sakta hai, kabhi kam nahi).
+
+NOTE (2026-09-07): US sales tax add kiya - US retail sites price
+DISPLAY karte hain BINA tax ke (tax checkout pe add hota hai, ship-to
+state ke hisaab se) - jabki humara reshipper US address hai (New
+Jersey), toh actual purchase ke waqt genuinely ~7% sales tax lagta
+hai jo humara formula pehle account hi nahi kar raha tha - matlab
+real cost se kam calculate ho raha tha. Ab USD-priced items pe 7% tax
+price_inr pe hi add hota hai (currency-convert hone ke turant baad,
+shipping se pehle) - taaki landed cost accurate ho.
+UK (GBP) sites pe VAT already display-inclusive hota hai (UK law),
+isliye GBP items pe extra tax nahi add kiya - already included hai.
 """
 import math
 
@@ -29,6 +40,14 @@ CURRENCY_TO_INR = {
 SHIPPING_PER_KG = 1250
 MARGIN = 0.25
 MIN_DISCOUNT_PERCENT = 0.35  # har product pe kam se kam itna "% off" dikhna chahiye
+
+# US retail prices tax-EXCLUSIVE display hote hain (checkout pe add hota
+# hai) - humara reshipper US address hai, isliye actual purchase pe ye
+# tax genuinely lagta hai. GBP (UK) prices already VAT-inclusive hote
+# hain by law, isliye unpe extra tax nahi lagate.
+SALES_TAX_BY_CURRENCY = {
+    "USD": 0.07,
+}
 
 CATEGORY_WEIGHTS = {
     "shoes": 2.0,
@@ -98,8 +117,10 @@ def calculate_pricing(price, category, currency="USD", name=None):
     rate = CURRENCY_TO_INR.get(currency, CURRENCY_TO_INR["USD"])
     weight_kg = get_weight(category, name)
 
-    price_inr = round(price * rate, 2)
-    landed_cost_inr = round((price * rate) + (weight_kg * SHIPPING_PER_KG), 2)
+    tax_rate = SALES_TAX_BY_CURRENCY.get(currency, 0.0)
+    price_inr = round(price * rate * (1 + tax_rate), 2)
+
+    landed_cost_inr = round(price_inr + (weight_kg * SHIPPING_PER_KG), 2)
 
     raw_selling_price = landed_cost_inr * (1 + MARGIN)
     selling_price_inr = round_to_99(raw_selling_price)
