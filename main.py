@@ -10,15 +10,14 @@ process karte hain.
 
 NOTE (2026-09-05): BADA follow-up fix - upar wale fix mein "kabhi
 scrape na hui" (naya-added) sites ko HAMESHA sabse pehle priority milti
-thi (empty sort-key sabse pehle aata hai). Jab is session mein 30+ naye
-brands add kiye (kai credits-khatam hone ki wajah se fail ho rahe the),
-wo saare sites HAMESHA queue ke shuru mein aa gaye - matlab AloYoga
-(jo genuinely purani-scraped thi, but at least kabhi successfully
-scrape hui thi) permanently peeche reh gayi, kabhi bhi turn hi nahi
-aaya. Fix: "kabhi-scrape-na-hui" aur "purani-scraped-but-kaam-karti-
-hain" sites ko INTERLEAVE karte hain (mix karke alternate karte hain)
-- taaki koi bhi group dusre ko permanently starve na kare. Ratio:
-har 2 "purani-stale" sites ke baad 1 "kabhi-nahi" site try hoti hai.
+thi. Fix: "kabhi-scrape-na-hui" aur "purani-scraped-but-kaam-karti-
+hain" sites ko INTERLEAVE karte hain - har 2 "purani-stale" sites ke
+baad 1 "kabhi-nahi" site try hoti hai.
+
+NOTE (2026-09-13): "use_firecrawl": True routing add kiya - Firecrawl
+ScrapeGraphAI ka sasta alternative hai ($16/month vs $20/month entry
+tier), same schema/architecture (firecrawl_scraper.py scrapegraph_
+scraper.py jaisa hi hai).
 """
 import os
 import re
@@ -31,6 +30,7 @@ from extract import scrape_site
 from shopify_scraper import scrape_shopify
 from scraperapi_scraper import scrape_site_scraperapi
 from scrapegraph_scraper import scrape_site_scrapegraph
+from firecrawl_scraper import scrape_site_firecrawl
 from db import save_product
 
 
@@ -98,18 +98,11 @@ def get_staleness_order(sites):
                 if last_scraped[site_name] is None or ts > last_scraped[site_name]:
                     last_scraped[site_name] = ts
 
-        # Do groups: jo kabhi successfully scrape hui hain (real date se
-        # sort - purani pehle), aur jo kabhi nahi hui (ye group ko
-        # permanently pehle aane se rokna hai - warna naye/failing sites
-        # hamesha purane working sites (jaise aloyoga) ko block kar dete
-        # hain).
         has_data = [s for s in sites if last_scraped.get(s["name"])]
         never_scraped = [s for s in sites if not last_scraped.get(s["name"])]
 
         has_data.sort(key=lambda c: last_scraped.get(c["name"]) or "")
 
-        # Interleave: har 2 "has_data" (purani-stale) site ke baad 1
-        # "never_scraped" site - dono group ko fair turn milta hai.
         merged = []
         hi, ni = 0, 0
         while hi < len(has_data) or ni < len(never_scraped):
@@ -155,6 +148,8 @@ def run():
                     print(f"  {config['domain']} -> {len(products)} products")
                 elif config.get("use_scraperapi"):
                     products = scrape_site_scraperapi(config)
+                elif config.get("use_firecrawl"):
+                    products = scrape_site_firecrawl(config)
                 elif config.get("use_scrapegraph"):
                     products = scrape_site_scrapegraph(config)
                 else:
