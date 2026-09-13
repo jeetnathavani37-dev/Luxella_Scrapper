@@ -38,10 +38,13 @@ marketplace, overselling risk.
 
 NOTE (2026-09-07) #2: beyondyoga HATA DIYA - Beyond Yoga khud already
 India ko direct INR pricing pe ship karta hai, jo Luxella ke markup
-wale price se SASTA nikla (₹11,400 unki site pe vs ₹14,899 Luxella
-pe same product) - matlab Luxella ka koi value-proposition nahi is
-brand ke liye, customer seedha unse sasta khareed sakta hai. Poora
-data (417 rows, 313 pushed) remove_site_data.py se clean kiya.
+wale price se SASTA nikla - koi value-proposition nahi.
+
+NOTE (2026-09-13): michaelkors aur coach ko TEST ke liye "use_firecrawl"
+pe switch kiya (ScrapeGraphAI se) - Firecrawl sasta provider hai
+($16/month Hobby vs $20/month ScrapeGraphAI Starter), same AI-based
+extraction. Agar Akamai-protected sites pe kaam kar jaaye, baaki
+brands (Coach, StockX, GOAT, etc.) bhi isी pe switch kar denge.
 """
 
 # ScrapeGraphAI ke liye - JS-rendering + stealth mode + scrolling,
@@ -61,8 +64,7 @@ SITES = [
             "https://www.michaelkors.com/women/watches/",
             "https://www.michaelkors.com/women/sunglasses/",
         ],
-        "use_scrapegraph": True,
-        "fetch_config": STEALTH_FETCH_CONFIG,
+        "use_firecrawl": True,
         "currency": "USD",
     },
     {
@@ -73,8 +75,7 @@ SITES = [
             "https://www.coach.com/shop/men/view-all",
             "https://www.coach.com/shop/women/accessories/view-all",
         ],
-        "use_scrapegraph": True,
-        "fetch_config": STEALTH_FETCH_CONFIG,
+        "use_firecrawl": True,
         "currency": "USD",
     },
     {
