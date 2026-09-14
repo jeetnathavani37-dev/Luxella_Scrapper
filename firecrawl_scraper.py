@@ -16,8 +16,21 @@ kuch badalna na pade.
 NOTE (2026-09-13): ScrapeGraphAI ke credits baar-baar khatam ho jaate
 the aur uska plan mehenga tha ($20-100/month). Firecrawl try kiya -
 same category (AI/prompt-based extraction), Hobby plan sasta hai
-($16/month, 10k credits) aur JS-rendering base price mein hi included
-hai (stealth-charge alag se nahi).
+($16/month, 10k credits).
+
+NOTE (2026-09-13) #2: BADA fix - request body ka format galat tha.
+Firecrawl ka v1/scrape "formats" ek STRING array leta hai (jaise
+["json"]), object nahi - aur prompt/schema "jsonOptions" naam ke alag
+top-level field mein jaate hain, "formats" ke andar nahi. Pehle wala
+format ("formats": [{"type": "json", ...}]) Firecrawl ke actual schema
+se match nahi karta tha, isliye har request "400 Bad Request" de raha
+tha. Fix kiya.
+
+NOTE (2026-09-13) #3: IMPORTANT cost-correction - JSON-mode extraction
+5 CREDITS/page leta hai (1 base + 4 extra JSON-mode ke liye), 1 nahi
+jaisa pehle bataya tha. Credit-budget isके hisaab se recalculate karna
+padega (50 brands, 1x/din = ~18,750 credits/mahina, Hobby ke 10,000
+mein NAHI fit hoga - Standard ya kam brands/frequency chahiye hoga).
 """
 import os
 import re
@@ -118,7 +131,8 @@ def build_variants_from_sizes(item):
 def fetch_products(url, prompt, schema, timeout=120):
     payload = {
         "url": url,
-        "formats": [{"type": "json", "prompt": prompt, "schema": schema}],
+        "formats": ["json"],
+        "jsonOptions": {"prompt": prompt, "schema": schema},
         "onlyMainContent": False,
     }
     resp = requests.post(FIRECRAWL_SCRAPE_URL, headers=_headers(), json=payload, timeout=timeout)
