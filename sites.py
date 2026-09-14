@@ -40,11 +40,16 @@ NOTE (2026-09-07) #2: beyondyoga HATA DIYA - Beyond Yoga khud already
 India ko direct INR pricing pe ship karta hai, jo Luxella ke markup
 wale price se SASTA nikla - koi value-proposition nahi.
 
-NOTE (2026-09-13): michaelkors aur coach ko TEST ke liye "use_firecrawl"
-pe switch kiya (ScrapeGraphAI se) - Firecrawl sasta provider hai
-($16/month Hobby vs $20/month ScrapeGraphAI Starter), same AI-based
-extraction. Agar Akamai-protected sites pe kaam kar jaaye, baaki
-brands (Coach, StockX, GOAT, etc.) bhi isी pe switch kar denge.
+NOTE (2026-09-13): michaelkors aur coach "use_firecrawl" pe switch
+kiye - CONFIRMED WORKING (Akamai bypass ho gaya, real data mil raha
+hai)! Firecrawl sasta provider hai ($16/month Hobby), same AI-based
+extraction jaisa ScrapeGraphAI. NOTE: JSON-mode extraction 5
+credits/page leta hai (1 nahi jaisa pehle socha tha) - isliye saari
+20+ brands ek saath switch karne se Hobby plan (10k credits) jaldi
+khatam ho sakta hai, dheere-dheere rollout kar rahe hain.
+
+NOTE (2026-09-14): stockx aur goat bhi "use_firecrawl" pe switch kiye
+(dusra batch, MK/Coach ke success ke baad).
 """
 
 # ScrapeGraphAI ke liye - JS-rendering + stealth mode + scrolling,
@@ -264,8 +269,7 @@ SITES = [
             "https://stockx.com/streetwear",
             "https://stockx.com/category/accessories",
         ],
-        "use_scrapegraph": True,
-        "fetch_config": STEALTH_FETCH_CONFIG,
+        "use_firecrawl": True,
         "currency": "USD",
         "is_marketplace": True,
     },
@@ -277,8 +281,7 @@ SITES = [
             "https://www.goat.com/accessories",
             "https://www.goat.com/collectibles",
         ],
-        "use_scrapegraph": True,
-        "fetch_config": STEALTH_FETCH_CONFIG,
+        "use_firecrawl": True,
         "currency": "USD",
         "is_marketplace": True,
     },
