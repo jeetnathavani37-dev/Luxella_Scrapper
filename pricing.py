@@ -24,12 +24,22 @@ NOTE (2026-09-07): US sales tax add kiya - US retail sites price
 DISPLAY karte hain BINA tax ke (tax checkout pe add hota hai, ship-to
 state ke hisaab se) - jabki humara reshipper US address hai (New
 Jersey), toh actual purchase ke waqt genuinely ~7% sales tax lagta
-hai jo humara formula pehle account hi nahi kar raha tha - matlab
-real cost se kam calculate ho raha tha. Ab USD-priced items pe 7% tax
-price_inr pe hi add hota hai (currency-convert hone ke turant baad,
-shipping se pehle) - taaki landed cost accurate ho.
-UK (GBP) sites pe VAT already display-inclusive hota hai (UK law),
-isliye GBP items pe extra tax nahi add kiya - already included hai.
+hai jo humara formula pehle account hi nahi kar raha tha. Ab USD-priced
+items pe 7% tax price_inr pe hi add hota hai. UK (GBP) sites pe VAT
+already display-inclusive hota hai, isliye GBP items pe extra tax
+nahi add kiya.
+
+NOTE (2026-09-15): UAE-selling support add kiya - Jeet ne UAE mein
+bhi bechna shuru karna hai. Model: products pehle India aate hain
+(jaisa already hota hai), phir "ShipGlobal" company se UAE reship
+hote hain ~Rs 700-800 mein. calculate_pricing() ab "destination"
+parameter leta hai ("india" default, "uae" naya) - UAE ke liye is
+UAE_RESHIP_FEE_INR (midpoint Rs 750, adjust kar sakte hain agar exact
+number pata chale) landed_cost mein extra add hota hai INDIA-shipping
+ke UPAR (kyunki UAE order bhi pehle India-hi-route follow karta hai,
+phir extra UAE-leg). Output abhi bhi INR mein hai - Shopify Markets
+apne aap AED mein convert karke dikhayega customer ko (auto currency
+conversion), isliye humein alag se AED-math karne ki zaroorat nahi.
 """
 import math
 
@@ -40,6 +50,8 @@ CURRENCY_TO_INR = {
 SHIPPING_PER_KG = 1250
 MARGIN = 0.25
 MIN_DISCOUNT_PERCENT = 0.35  # har product pe kam se kam itna "% off" dikhna chahiye
+
+UAE_RESHIP_FEE_INR = 750  # ShipGlobal ka India->UAE reship charge (Rs 700-800 range ka midpoint)
 
 # US retail prices tax-EXCLUSIVE display hote hain (checkout pe add hota
 # hai) - humara reshipper US address hai, isliye actual purchase pe ye
@@ -105,7 +117,12 @@ def calculate_compare_at_price(selling_price_inr):
     return round_to_99(raw_compare_at)
 
 
-def calculate_pricing(price, category, currency="USD", name=None):
+def calculate_pricing(price, category, currency="USD", name=None, destination="india"):
+    """destination: "india" (default, jaisa hamesha se tha) ya "uae"
+    (UAE-selling ke liye - India-shipping ke upar ShipGlobal ka extra
+    reship-fee add hota hai). Output hamesha INR mein hi rehta hai
+    dono ke liye - Shopify Markets customer ko uski currency (AED
+    UAE ke liye) mein auto-convert karke dikhata hai."""
     if price is None:
         return {
             "price_inr": None,
@@ -121,6 +138,9 @@ def calculate_pricing(price, category, currency="USD", name=None):
     price_inr = round(price * rate * (1 + tax_rate), 2)
 
     landed_cost_inr = round(price_inr + (weight_kg * SHIPPING_PER_KG), 2)
+
+    if destination == "uae":
+        landed_cost_inr = round(landed_cost_inr + UAE_RESHIP_FEE_INR, 2)
 
     raw_selling_price = landed_cost_inr * (1 + MARGIN)
     selling_price_inr = round_to_99(raw_selling_price)
