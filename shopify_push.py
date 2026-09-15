@@ -34,20 +34,16 @@ karta hai (0 nahi) - taaki auto_pilot.py pata laga sake ki push mein
 abhi bhi kaam bacha hai ya nahi.
 
 NOTE (2026-09-02) #7: mark_pushed() ab last_synced_compare_at_price_inr
-BHI set karta hai push ke time hi (pehle sirf shopify_sync.py set karta
-tha) - kyunki MRP already push-payload mein bhej diya jaata hai, isliye
-Shopify pe already sahi hai. Pehle isse "mrp_synced" tracking column
-NULL rehta tha jab tak sync dobara us row ko touch na kare - jisse
-lagta tha ki sync "peeche reh gaya hai", jabki actual Shopify data
-hamesha sahi tha, sirf humara bookkeeping column stale tha. Fix se
-sync ka real kaam (sirf genuine price-CHANGES track karna, future mein)
-kam ho jaata hai, aur progress-metrics turant accurate dikhte hain.
+BHI set karta hai push ke time hi.
 
-Requires GitHub Secrets:
-    SHOPIFY_STORE_DOMAIN, SHOPIFY_CLIENT_ID, SHOPIFY_CLIENT_SECRET
-
-Usage:
-    BATCH_SIZE=200 python shopify_push.py
+NOTE (2026-09-15): Duplicate-prevention add kiya - push karne se pehle
+fingerprint (brand+naam) compute karke check karte hain ki koi cheaper
+(ya equal) duplicate PEHLE SE Shopify pe push ho chuka hai kya (jaise
+same Coach bag kisi aur site se sasta pehle hi aa chuka ho). Agar haan,
+naya product push NAHI karte - "is_duplicate": True mark kar dete hain
+seedha. Ye dedupe_products.py (jo EXISTING catalog clean karta hai)
+ka complement hai - ye NAYE incoming products ko duplicate banne se
+hi rok deta hai.
 """
 import os
 import re
@@ -56,6 +52,7 @@ import requests
 from datetime import datetime, timezone
 from supabase import create_client
 from pricing import calculate_pricing
+from dedup_utils import compute_fingerprint
 
 BATCH_SIZE = int(os.environ.get("BATCH_SIZE", "200"))
 RATE_LIMIT_DELAY = 0.6
@@ -107,6 +104,7 @@ def fetch_pending_products(sb, limit):
         .select("id,sku,name,brand,category,currency,selling_price_inr,compare_at_price_inr,"
                  "image_url,image_urls,description,variants,in_stock,site")
         .eq("pushed_to_shopify", False)
+        .is_("is_duplicate", "null")
         .not_.is_("selling_price_inr", "null")
         .not_.is_("name", "null")
         .neq("name", "")
@@ -114,6 +112,27 @@ def fetch_pending_products(sb, limit):
         .execute()
     )
     return resp.data
+
+
+def get_existing_fingerprint_prices(sb):
+    """Already-pushed products ke fingerprint -> cheapest price ka
+    lookup-dict banata hai, taaki har naye product ke liye alag query
+    na karni pade (ek hi query mein sab fetch)."""
+    resp = (
+        sb.table("products")
+        .select("brand,name,selling_price_inr")
+        .eq("pushed_to_shopify", True)
+        .is_("is_duplicate", "null")
+        .not_.is_("selling_price_inr", "null")
+        .execute()
+    )
+    lookup = {}
+    for row in resp.data:
+        fp = compute_fingerprint(row.get("brand"), row.get("name"))
+        price = row["selling_price_inr"]
+        if fp and (fp not in lookup or price < lookup[fp]):
+            lookup[fp] = price
+    return lookup
 
 
 def get_first_image_url(p):
@@ -244,7 +263,7 @@ def set_inventory(access_token, location_id, inventory_item_id, quantity):
     resp.raise_for_status()
 
 
-def mark_pushed(sb, product_id, shopify_product, in_stock, compare_at_price_inr):
+def mark_pushed(sb, product_id, shopify_product, in_stock, compare_at_price_inr, fingerprint):
     variant = shopify_product["variants"][0]
     sb.table("products").update({
         "pushed_to_shopify": True,
@@ -257,6 +276,14 @@ def mark_pushed(sb, product_id, shopify_product, in_stock, compare_at_price_inr)
         "last_synced_in_stock": in_stock,
         "shopify_pushed_at": datetime.now(timezone.utc).isoformat(),
         "shopify_synced_at": datetime.now(timezone.utc).isoformat(),
+        "product_fingerprint": fingerprint,
+    }).eq("id", product_id).execute()
+
+
+def mark_duplicate(sb, product_id, fingerprint):
+    sb.table("products").update({
+        "is_duplicate": True,
+        "product_fingerprint": fingerprint,
     }).eq("id", product_id).execute()
 
 
@@ -268,6 +295,10 @@ def run():
         print("Koi pending products nahi hain push karne ke liye.")
         return 0
 
+    print("Duplicate-check ke liye existing pushed products ka fingerprint-lookup bana rahe hain...")
+    existing_fp_prices = get_existing_fingerprint_prices(sb)
+    print(f"{len(existing_fp_prices)} unique existing fingerprints mile.")
+
     print("Access token generate kar rahe hain (client credentials grant)...")
     access_token = get_access_token()
     print("Token mil gaya.")
@@ -275,11 +306,23 @@ def run():
     location_id = DEFAULT_LOCATION_ID
     print(f"Default location (hardcoded): {location_id}")
 
-    print(f"{len(pending)} products push kar rahe hain Shopify pe (LIVE + PUBLISHED, fast mode)...")
+    print(f"{len(pending)} products check/push kar rahe hain Shopify pe...")
 
-    summary = {"pushed": 0, "errors": 0, "multi_size": 0, "inventory_calls_skipped": 0}
+    summary = {"pushed": 0, "skipped_duplicate": 0, "errors": 0, "multi_size": 0, "inventory_calls_skipped": 0}
 
     for p in pending:
+        fingerprint = compute_fingerprint(p.get("brand"), p.get("name"))
+
+        # Duplicate check - agar cheaper (ya equal) wala already Shopify
+        # pe hai, is naye ko skip kar do, duplicate mark kar do.
+        existing_price = existing_fp_prices.get(fingerprint)
+        this_price = p.get("selling_price_inr")
+        if existing_price is not None and this_price is not None and existing_price <= this_price:
+            mark_duplicate(sb, p["id"], fingerprint)
+            summary["skipped_duplicate"] += 1
+            print(f"  [SKIP-DUPLICATE] {p.get('name')} (Rs{this_price}) - cheaper/equal version already pushed (Rs{existing_price})")
+            continue
+
         try:
             payload, size_variants = build_shopify_payload(p)
             shopify_product = create_shopify_product(payload, access_token)
@@ -287,9 +330,6 @@ def run():
             shopify_variants = shopify_product["variants"]
 
             if size_variants:
-                # Sirf IN-STOCK sizes ke liye call karo - out-of-stock
-                # sizes already 0 hain by default (naya product hamesha
-                # 0 stock se banta hai), unke liye call karna waste hai.
                 for sv, shopify_v in zip(size_variants, shopify_variants):
                     if sv["in_stock"]:
                         set_inventory(access_token, location_id, shopify_v["inventory_item_id"], 10)
@@ -309,8 +349,12 @@ def run():
                 overall_in_stock = in_stock
                 compare_at_for_tracking = p.get("compare_at_price_inr")
 
-            mark_pushed(sb, p["id"], shopify_product, overall_in_stock, compare_at_for_tracking)
+            mark_pushed(sb, p["id"], shopify_product, overall_in_stock, compare_at_for_tracking, fingerprint)
             summary["pushed"] += 1
+            # Is-run mein bhi lookup update kar do, taaki isi batch ke
+            # baaki duplicates bhi turant pakde jaayein.
+            if this_price is not None and (fingerprint not in existing_fp_prices or this_price < existing_fp_prices[fingerprint]):
+                existing_fp_prices[fingerprint] = this_price
             size_info = f", sizes: {len(size_variants)}" if size_variants else ""
             print(f"  [OK] {p.get('name')} -> Shopify ID {shopify_product['id']}{size_info}")
         except Exception as e:
