@@ -91,6 +91,17 @@ def strip_code_fence(text):
     return text.strip()
 
 
+# Description bohot lambi ho (scraped page ka poora dump waghera) to
+# Claude request malformed/too-large ho jaati hai - isliye cap karte hain.
+MAX_DESCRIPTION_CHARS = 6000
+
+# Supabase/PostgREST ek query mein max 1000 rows deta hai by default -
+# isliye BATCH_SIZE > 1000 honay par bhi .limit() se sirf 1000 hi milte
+# the. Ab .range() se page-by-page fetch karte hain taaki poora
+# BATCH_SIZE honor ho.
+SUPABASE_PAGE_SIZE = 1000
+
+
 def rephrase_with_claude(name, brand, description_text):
     api_key = os.environ["ANTHROPIC_API_KEY"]
     headers = {
@@ -105,22 +116,37 @@ def rephrase_with_claude(name, brand, description_text):
         "messages": [{"role": "user", "content": prompt}],
     }
     resp = requests.post(ANTHROPIC_API_URL, headers=headers, json=payload, timeout=60)
-    resp.raise_for_status()
+    if resp.status_code >= 400:
+        # raise_for_status() ka generic message asli wajah chhupa deta
+        # tha (e.g. invalid model, bad prompt) - response body includes
+        # karte hain taaki failures diagnose ho sakein.
+        raise RuntimeError(f"{resp.status_code} error from Anthropic API: {resp.text[:500]}")
     body = resp.json()
     return strip_code_fence(body["content"][0]["text"])
 
 
 def fetch_candidates(sb, limit):
-    resp = (
-        sb.table("products")
-        .select("id,name,brand,description,shopify_product_id,pushed_to_shopify")
-        .not_.is_("description", "null")
-        .neq("description", "")
-        .is_("description_rephrased", "null")
-        .limit(limit)
-        .execute()
-    )
-    return resp.data
+    candidates = []
+    offset = 0
+    while len(candidates) < limit:
+        page_size = min(SUPABASE_PAGE_SIZE, limit - len(candidates))
+        resp = (
+            sb.table("products")
+            .select("id,name,brand,description,shopify_product_id,pushed_to_shopify")
+            .not_.is_("description", "null")
+            .neq("description", "")
+            .is_("description_rephrased", "null")
+            .range(offset, offset + page_size - 1)
+            .execute()
+        )
+        page = resp.data
+        if not page:
+            break
+        candidates.extend(page)
+        if len(page) < page_size:
+            break
+        offset += page_size
+    return candidates
 
 
 def update_shopify_description(access_token, shopify_product_id, new_description_html):
@@ -155,6 +181,8 @@ def run():
             if not plain_text:
                 sb.table("products").update({"description_rephrased": True}).eq("id", p["id"]).execute()
                 continue
+            if len(plain_text) > MAX_DESCRIPTION_CHARS:
+                plain_text = plain_text[:MAX_DESCRIPTION_CHARS]
 
             new_html = rephrase_with_claude(p.get("name"), p.get("brand"), plain_text)
 
