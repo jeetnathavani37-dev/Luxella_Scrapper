@@ -4,46 +4,24 @@ shopify_push.py
 Supabase 'products' table se new products ko Shopify (Luxella store) mein
 push karta hai - Shopify Admin API (REST) ke through.
 
-NOTE (2026-08-30): Client credentials grant (24h token), inventory
-alag call se set hoti hai (create-time field Shopify ignore karta hai),
-real description + multi-size variants bhejte hain (agar available
-hain), status=active + published=true (Online Store pe live hone ke
-liye dono zaroori hain).
-
-NOTE (2026-08-30) #2: compare_at_price bhi bhejte hain ab - Shopify pe
-crossed-out "anchor" price dikhta hai, discount ka feel dene ke liye.
-
-NOTE (2026-08-30) #3: Location ID hardcode hai (87267410093) -
-'read_locations' scope avoid karne ke liye.
-
-NOTE (2026-09-01) #4: BADA speed fix - poori gallery (3-8 images)
-create-request mein bhej rahe the, Shopify har image SYNCHRONOUSLY
-fetch/validate karta hai create ke andar - isliye create call bohot
-slow ho raha tha (~15 sec/product). Fix: sirf PEHLI image create pe
-bhejte hain, baaki gallery shopify_image_backfill.py alag se add karta
-hai.
-
-NOTE (2026-09-01) #5: DOOSRA speed fix - multi-size products ke liye
-HAR size ke liye alag inventory_levels/set call kar rahe the, chahe wo
-size out-of-stock ho. Discovery: naya product hamesha 0 stock se banta
-hai by default - out-of-stock sizes ke liye call karne ki zaroorat hi
-nahi. Fix: sirf IN-STOCK sizes ke liye hi call karte hain ab.
-
-NOTE (2026-09-02) #6: run() ab kitne products push hue wo count return
-karta hai (0 nahi) - taaki auto_pilot.py pata laga sake ki push mein
-abhi bhi kaam bacha hai ya nahi.
-
-NOTE (2026-09-02) #7: mark_pushed() ab last_synced_compare_at_price_inr
-BHI set karta hai push ke time hi.
+NOTE (2026-08-30) se (2026-09-02) #7 tak: Client credentials grant,
+inventory alag call, real description, multi-size variants, status
+active+published, compare_at_price, hardcoded location, image-speed
+fix, inventory-call skip for out-of-stock, push-count return,
+last_synced_compare_at_price_inr - detail purane commits mein.
 
 NOTE (2026-09-15): Duplicate-prevention add kiya - push karne se pehle
 fingerprint (brand+naam) compute karke check karte hain ki koi cheaper
-(ya equal) duplicate PEHLE SE Shopify pe push ho chuka hai kya (jaise
-same Coach bag kisi aur site se sasta pehle hi aa chuka ho). Agar haan,
-naya product push NAHI karte - "is_duplicate": True mark kar dete hain
-seedha. Ye dedupe_products.py (jo EXISTING catalog clean karta hai)
-ka complement hai - ye NAYE incoming products ko duplicate banne se
-hi rok deta hai.
+(ya equal) duplicate PEHLE SE Shopify pe push ho chuka hai kya.
+
+NOTE (2026-09-17): BADA performance fix - get_existing_fingerprint_
+prices() poore 46,000+ pushed products ko EK HI query mein fetch kar
+raha tha, jisse Postgres "statement timeout" de raha tha (auto-pilot
+workflow fail ho raha tha isی wajah se). Fix: PAGINATION add kiya
+(.range() se 2000-row chunks mein fetch, jaisa rephrase_descriptions.py
+mein bhi kiya tha) - taaki ek single bada query kabhi na chale. Saath
+mein DB-level index bhi add kiya (idx_products_pushed_dup,
+idx_products_pending) taaki filtering fast ho.
 """
 import os
 import re
@@ -58,6 +36,7 @@ BATCH_SIZE = int(os.environ.get("BATCH_SIZE", "200"))
 RATE_LIMIT_DELAY = 0.6
 API_VERSION = "2025-01"
 DEFAULT_LOCATION_ID = 87267410093  # Luxella store ka single location - hardcoded
+FINGERPRINT_PAGE_SIZE = 2000
 
 
 def get_supabase():
@@ -108,7 +87,7 @@ def fetch_pending_products(sb, limit):
         .not_.is_("selling_price_inr", "null")
         .not_.is_("name", "null")
         .neq("name", "")
-        .limit(limit)
+        .range(0, limit - 1)
         .execute()
     )
     return resp.data
@@ -116,22 +95,35 @@ def fetch_pending_products(sb, limit):
 
 def get_existing_fingerprint_prices(sb):
     """Already-pushed products ke fingerprint -> cheapest price ka
-    lookup-dict banata hai, taaki har naye product ke liye alag query
-    na karni pade (ek hi query mein sab fetch)."""
-    resp = (
-        sb.table("products")
-        .select("brand,name,selling_price_inr")
-        .eq("pushed_to_shopify", True)
-        .is_("is_duplicate", "null")
-        .not_.is_("selling_price_inr", "null")
-        .execute()
-    )
+    lookup-dict banata hai. PAGINATED (2000-row chunks) - poori table
+    (46,000+ rows) ek single query mein fetch karna Postgres statement-
+    timeout de raha tha, isliye chunk-by-chunk loop karte hain."""
     lookup = {}
-    for row in resp.data:
-        fp = compute_fingerprint(row.get("brand"), row.get("name"))
-        price = row["selling_price_inr"]
-        if fp and (fp not in lookup or price < lookup[fp]):
-            lookup[fp] = price
+    offset = 0
+    while True:
+        resp = (
+            sb.table("products")
+            .select("brand,name,selling_price_inr")
+            .eq("pushed_to_shopify", True)
+            .is_("is_duplicate", "null")
+            .not_.is_("selling_price_inr", "null")
+            .range(offset, offset + FINGERPRINT_PAGE_SIZE - 1)
+            .execute()
+        )
+        rows = resp.data
+        if not rows:
+            break
+
+        for row in rows:
+            fp = compute_fingerprint(row.get("brand"), row.get("name"))
+            price = row["selling_price_inr"]
+            if fp and (fp not in lookup or price < lookup[fp]):
+                lookup[fp] = price
+
+        if len(rows) < FINGERPRINT_PAGE_SIZE:
+            break
+        offset += FINGERPRINT_PAGE_SIZE
+
     return lookup
 
 
@@ -295,7 +287,7 @@ def run():
         print("Koi pending products nahi hain push karne ke liye.")
         return 0
 
-    print("Duplicate-check ke liye existing pushed products ka fingerprint-lookup bana rahe hain...")
+    print("Duplicate-check ke liye existing pushed products ka fingerprint-lookup bana rahe hain (paginated)...")
     existing_fp_prices = get_existing_fingerprint_prices(sb)
     print(f"{len(existing_fp_prices)} unique existing fingerprints mile.")
 
@@ -351,8 +343,6 @@ def run():
 
             mark_pushed(sb, p["id"], shopify_product, overall_in_stock, compare_at_for_tracking, fingerprint)
             summary["pushed"] += 1
-            # Is-run mein bhi lookup update kar do, taaki isi batch ke
-            # baaki duplicates bhi turant pakde jaayein.
             if this_price is not None and (fingerprint not in existing_fp_prices or this_price < existing_fp_prices[fingerprint]):
                 existing_fp_prices[fingerprint] = this_price
             size_info = f", sizes: {len(size_variants)}" if size_variants else ""
