@@ -31,18 +31,22 @@ Dry-run preview `shopify_sync.run()` ka price/compare-at/stock change check copy
 `shopify_sync.py` mein sync rule badlo to yahan bhi update karo, warna preview aur actual run alag honge.
 Same tarah `is_duplicate()` = `shopify_push.run()` ka duplicate rule (`existing <= this_price`).
 
-## `price` column assumption
+## `price` column
 
 `luxella_price_report` `products.price` (source retailer price, `currency` mein) select karta hai.
-Ye live schema se verify NAHI hua — `db.save_product()` scraper ka `price` field seedha insert karta hai, usi se assume kiya.
-Pehli live run pe column naam check karna hai; galat hua to tool clear error dega (`ToolError` mein Supabase ka message).
+2026-09-28 ko live Supabase pe verify ho gaya (e.g. `price: 125.1, currency: USD`) — charon tools live data pe chal gaye.
+
+## Supabase key format
+
+Repo `supabase==2.5.0` pinned hai, jo sirf legacy JWT keys (`eyJ...`) accept karta hai.
+Naya `sb_secret_...` format client-side hi `Invalid API key` de deta hai — `SUPABASE_SERVICE_KEY` mein legacy **service_role** key daalo.
 
 ## Env vars (`~/.luxella.env`, `chmod 600`)
 
 | Var | Zaroori | Note |
 |---|---|---|
 | `SUPABASE_URL` | Haan | `https://bkxzkrbhqpwosqecndnx.supabase.co` |
-| `SUPABASE_SERVICE_KEY` | Haan | service_role key |
+| `SUPABASE_SERVICE_KEY` | Haan | Legacy service_role key (`eyJ...`), `sb_secret_` nahi |
 | `SHOPIFY_TOKEN` | Writes ke liye (ya neeche wale dono) | Static `shpat_...` token; set ho to client-credentials grant skip |
 | `SHOPIFY_CLIENT_ID` + `SHOPIFY_CLIENT_SECRET` | `SHOPIFY_TOKEN` ki jagah | Pipeline wala client-credentials grant |
 | `SHOPIFY_STORE_DOMAIN` | Nahi | Default `luxella-9299.myshopify.com` |
