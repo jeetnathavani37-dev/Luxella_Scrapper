@@ -4,7 +4,7 @@ import asyncio
 import os
 
 for k in ("SUPABASE_URL", "SUPABASE_SERVICE_KEY"):
-    os.environ.pop(k, None)
+    os.environ[k] = ""  # empty = load_dotenv ~/.luxella.env se override nahi karega
 
 import luxella_mcp as m
 
@@ -39,5 +39,23 @@ try:
     raise AssertionError("expected ValueError")
 except ValueError as e:
     assert "~/.luxella.env" in str(e)
+
+# shopify_sync.fetch_synced_products: stock-mismatch rows pehle, phir rotation (no dupes)
+class FakeQ:
+    def __init__(self, rows): self.rows, self.n = rows, None
+    def select(self, *_): return self
+    def eq(self, col, val): return FakeQ([r for r in self.rows if r.get(col) == val])
+    def order(self, *_a, **_k): return FakeQ(sorted(self.rows, key=lambda r: r["synced"]))
+    def limit(self, n): self.n = n; return self
+    def execute(self): return type("R", (), {"data": self.rows[:self.n]})()
+class FakeSB:
+    def __init__(self, rows): self.rows = rows
+    def table(self, _): return FakeQ(self.rows)
+rows = [{"id": i, "pushed_to_shopify": True, "in_stock": True, "last_synced_in_stock": True, "synced": i} for i in range(10)]
+rows[7].update(in_stock=False)                       # sold out, Shopify says in stock
+rows[9].update(in_stock=True, last_synced_in_stock=False)  # back in stock
+got = [p["id"] for p in m.shopify_sync.fetch_synced_products(FakeSB(rows), 4)]
+assert got == [7, 9, 0, 1], got
+assert [p["id"] for p in m.shopify_sync.fetch_synced_products(FakeSB(rows), 1)] == [7]
 
 print("ok")
