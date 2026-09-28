@@ -1,5 +1,5 @@
 """
-Entry point. Ye script GitHub Actions se har 6 ghante chalega.
+Entry point. GitHub Actions se chalta hai.
 
 NOTE (2026-09-02): BADA fix - 90+ sites hain, 60-min timeout ke andar
 saari scrape nahi ho paati. Pehle SITES list fixed order mein process
@@ -8,16 +8,28 @@ aloyoga) hamesha timeout se pehle chhoot jaati thi. Fix: ab Supabase se
 har site ka last scraped_at fetch karke, sabse purana-scraped pehle
 process karte hain.
 
-NOTE (2026-09-05): BADA follow-up fix - upar wale fix mein "kabhi
-scrape na hui" (naya-added) sites ko HAMESHA sabse pehle priority milti
-thi. Fix: "kabhi-scrape-na-hui" aur "purani-scraped-but-kaam-karti-
-hain" sites ko INTERLEAVE karte hain - har 2 "purani-stale" sites ke
-baad 1 "kabhi-nahi" site try hoti hai.
+NOTE (2026-09-05): "kabhi-scrape-na-hui" aur "purani-scraped-but-kaam-
+karti-hain" sites ko INTERLEAVE karte hain - har 2 "purani-stale" sites
+ke baad 1 "kabhi-nahi" site try hoti hai.
 
-NOTE (2026-09-13): "use_firecrawl": True routing add kiya - Firecrawl
-ScrapeGraphAI ka sasta alternative hai ($16/month vs $20/month entry
-tier), same schema/architecture (firecrawl_scraper.py scrapegraph_
-scraper.py jaisa hi hai).
+NOTE (2026-09-13): "use_firecrawl": True routing add kiya.
+
+NOTE (2026-09-28): SCRAPE_GROUP add kiya - Firecrawl credits (5 per
+page) 17 Sept ke aas-paas khatam ho gaye the kyunki 37 Firecrawl sites
+har 6 ghante chal rahi thi. Ab do alag groups hain:
+  - SCRAPE_GROUP="free" (DEFAULT, env set na ho tab bhi): sirf woh sites
+    jo Firecrawl use NAHI karti (Shopify brands etc.) - har 6 ghante wale
+    scrape.yml ke liye. Isse purana scrape.yml bina edit kiye hi ab
+    Firecrawl credits nahi jalata.
+  - SCRAPE_GROUP="firecrawl": sirf Firecrawl sites, PAUSED list ke
+    bahar wali - din mein 1 baar wale scrape-firecrawl.yml ke liye.
+  - SCRAPE_GROUP="all": sab kuch (manual use ke liye).
+ONLY_SITE set ho toh group aur paused dono ignore hote hain (manual
+test ke liye), jaisa pehle tha.
+
+PAUSED: woh Firecrawl sites jinme abhi tak ek bhi product nahi aaya -
+inpe credits jalana band kiya. Ek-ek karke ONLY_SITE se test karke
+list se hataana (jab credits/plan decide ho jaye).
 """
 import os
 import re
@@ -32,6 +44,30 @@ from scraperapi_scraper import scrape_site_scraperapi
 from scrapegraph_scraper import scrape_site_scrapegraph
 from firecrawl_scraper import scrape_site_firecrawl
 from db import save_product
+
+# Firecrawl sites jinse abhi tak koi data nahi aaya (2026-09-28 tak).
+FIRECRAWL_PAUSED = {
+    "longchamp", "jcrewfactory", "pandora", "dkny", "oakley", "biosilk",
+    "disneystore", "orientaltrading", "funko", "kohls", "hoka", "gilt",
+    "ruelala", "nordstromrack", "yoox", "flannels", "maisonette",
+    "scheels", "thecode", "secretlabel",
+}
+
+
+def filter_by_group(sites):
+    group = os.environ.get("SCRAPE_GROUP", "free").strip().lower()
+    if group == "all":
+        selected = list(sites)
+    elif group == "firecrawl":
+        selected = [
+            s for s in sites
+            if s.get("use_firecrawl") and s["name"] not in FIRECRAWL_PAUSED
+        ]
+    else:
+        group = "free"
+        selected = [s for s in sites if not s.get("use_firecrawl")]
+    print(f"SCRAPE_GROUP={group}: {len(selected)} sites select hui.")
+    return selected
 
 
 def build_proxy_username(base_username, country):
@@ -137,7 +173,7 @@ def run():
             print(f"[ERROR] ONLY_SITE='{only_site_raw}' - koi bhi site sites.py me nahi mili")
             return
     else:
-        sites = get_staleness_order(SITES)
+        sites = get_staleness_order(filter_by_group(SITES))
 
     with sync_playwright() as p:
         for config in sites:
