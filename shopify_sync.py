@@ -23,6 +23,12 @@ auto_pilot.py (jo push+sync+image-backfill ko continuous loop mein
 chalata hai jab tak sab kuch complete na ho jaaye) pata laga sake ki
 sync mein abhi bhi meaningful kaam bacha hai ya nahi.
 
+NOTE (2026-09-28): fetch_synced_products() ab stock-mismatch wale products
+PEHLE uthata hai (source pe sold out lekin Shopify pe abhi bhi in-stock,
+aur ulta). Pehle sirf shopify_synced_at rotation tha - ~48k products mein
+haal hi mein synced product ka sold-out hona poori rotation (kai din) tak
+Shopify pe nahi pahunchta tha, customer order kar sakta tha.
+
 Requires GitHub Secrets:
     SHOPIFY_STORE_DOMAIN, SHOPIFY_CLIENT_ID, SHOPIFY_CLIENT_SECRET
 
@@ -78,18 +84,27 @@ def get_shopify_base_url():
 
 
 def fetch_synced_products(sb, limit):
-    """Already-pushed products, sabse purane-synced pehle (rotation)."""
-    resp = (
-        sb.table("products")
-        .select("id,name,selling_price_inr,compare_at_price_inr,in_stock,shopify_variant_id,"
-                 "shopify_inventory_item_id,last_synced_price_inr,last_synced_compare_at_price_inr,"
-                 "last_synced_in_stock")
-        .eq("pushed_to_shopify", True)
-        .order("shopify_synced_at", desc=False, nullsfirst=True)
-        .limit(limit)
-        .execute()
-    )
-    return resp.data
+    """Already-pushed products. Pehle wo jinka stock Shopify se mismatch hai
+    (source pe sold out lekin Shopify pe in-stock, phir wapas-in-stock),
+    baaki batch sabse purane-synced se bharo (rotation)."""
+    def base():
+        return (
+            sb.table("products")
+            .select("id,name,selling_price_inr,compare_at_price_inr,in_stock,shopify_variant_id,"
+                    "shopify_inventory_item_id,last_synced_price_inr,last_synced_compare_at_price_inr,"
+                    "last_synced_in_stock")
+            .eq("pushed_to_shopify", True)
+        )
+
+    urgent = base().eq("in_stock", False).eq("last_synced_in_stock", True).limit(limit).execute().data
+    if len(urgent) < limit:
+        urgent += base().eq("in_stock", True).eq("last_synced_in_stock", False).limit(limit - len(urgent)).execute().data
+    if len(urgent) >= limit:
+        return urgent
+
+    seen = {p["id"] for p in urgent}
+    rotation = base().order("shopify_synced_at", desc=False, nullsfirst=True).limit(limit).execute().data
+    return urgent + [p for p in rotation if p["id"] not in seen][:limit - len(urgent)]
 
 
 def update_variant(access_token, variant_id, price, compare_at_price):
