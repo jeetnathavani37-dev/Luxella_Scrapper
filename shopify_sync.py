@@ -96,14 +96,14 @@ def fetch_synced_products(sb, limit):
             .eq("pushed_to_shopify", True)
         )
 
-    urgent = base().eq("in_stock", False).eq("last_synced_in_stock", True).limit(limit).execute().data
+    urgent = base().eq("in_stock", False).eq("last_synced_in_stock", True).order("id").limit(limit).execute().data
     if len(urgent) < limit:
-        urgent += base().eq("in_stock", True).eq("last_synced_in_stock", False).limit(limit - len(urgent)).execute().data
+        urgent += base().eq("in_stock", True).eq("last_synced_in_stock", False).order("id").limit(limit - len(urgent)).execute().data
     if len(urgent) >= limit:
         return urgent
 
     seen = {p["id"] for p in urgent}
-    rotation = base().order("shopify_synced_at", desc=False, nullsfirst=True).limit(limit).execute().data
+    rotation = base().order("shopify_synced_at", desc=False, nullsfirst=True).order("id").limit(limit).execute().data
     return urgent + [p for p in rotation if p["id"] not in seen][:limit - len(urgent)]
 
 

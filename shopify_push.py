@@ -87,6 +87,7 @@ def fetch_pending_products(sb, limit):
         .not_.is_("selling_price_inr", "null")
         .not_.is_("name", "null")
         .neq("name", "")
+        .order("id")  # stable batch - MCP preview aur apply same rows dekhein
         .range(0, limit - 1)
         .execute()
     )
