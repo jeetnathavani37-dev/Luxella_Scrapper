@@ -58,4 +58,45 @@ got = [p["id"] for p in m.shopify_sync.fetch_synced_products(FakeSB(rows), 4)]
 assert got == [7, 9, 0, 1], got
 assert [p["id"] for p in m.shopify_sync.fetch_synced_products(FakeSB(rows), 1)] == [7]
 
+# preview_id: same batch -> same id; koi bhi change (id, price, limit) -> naya id
+c, d, u = [{"id": 1}], [{"id": 2}], [{"id": 3, "changes": ["price 1 -> 2"]}]
+pid = m.preview_id(50, c, d, u)
+assert pid == m.preview_id(50, [{"id": 1}], [{"id": 2}], [{"id": 3, "changes": ["price 1 -> 2"]}])
+assert pid != m.preview_id(50, c, d, [{"id": 3, "changes": ["price 1 -> 3"]}])
+assert pid != m.preview_id(50, [{"id": 9}], d, u)
+assert pid != m.preview_id(60, c, d, u)
+
+# confirm gate: bina preview_id / galat preview_id -> ToolError, Shopify pe kuch nahi likha
+m.sb = lambda: None
+m.preview_batch = lambda client, limit: {"mode": "dry_run", "preview_id": "abc123"}
+calls = []
+m.shopify_push.run = lambda: calls.append("push") or 1
+m.shopify_sync.run = lambda: calls.append("sync") or 2
+for bad in (None, "stale"):
+    try:
+        m.luxella_sync_catalog(limit=50, confirm=True, preview_id=bad)
+        raise AssertionError("expected ToolError")
+    except m.ToolError:
+        pass
+assert calls == [], calls
+assert m.luxella_sync_catalog(limit=50)["mode"] == "dry_run" and calls == []
+assert m.luxella_sync_catalog(limit=50, confirm=True, preview_id="abc123")["mode"] == "applied"
+assert calls == ["push", "sync"]
+
+# partial failure: error mein log tail aata hai taaki agent ko pata ho kya likh gaya
+def half_push():
+    print("[PUSHED] Coach Tabby")
+    raise RuntimeError("token expired")
+m.shopify_push.run = half_push
+try:
+    m.luxella_sync_catalog(limit=50, confirm=True, preview_id="abc123")
+    raise AssertionError("expected ToolError")
+except m.ToolError as e:
+    assert "token expired" in str(e) and "[PUSHED] Coach Tabby" in str(e), e
+
+# luxella_query: products ka default slim, product_changes ka "*"
+import inspect
+assert inspect.signature(m.luxella_query).parameters["columns"].default is None
+assert "description" not in m.DEFAULT_PRODUCT_COLUMNS
+
 print("ok")
