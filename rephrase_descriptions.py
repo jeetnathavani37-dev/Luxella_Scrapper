@@ -19,8 +19,21 @@ FREE tier hai (koi credit-card nahi chahiye, koi expiration nahi) -
 1,500 requests/din tak free. Poora 38k backlog isse dheere-dheere
 (kai din mein) bilkul free clear ho jaayega.
 
+NOTE (2026-10-03): WAPAS CLAUDE PE - Gemini free tier se backlog clear
+nahi hua (42,308 pending, sirf 1,088 done). Ab Anthropic SDK
+(`anthropic` package) se Claude call hota hai. Credits wala purana
+issue dobara na ho, isliye:
+- Model REPHRASE_MODEL env se (default claude-opus-5-5), effort
+  REPHRASE_EFFORT se (default "low" - simple rewrite task hai). Naam
+  CLAUDE_* nahi rakha - Claude Code shell khud CLAUDE_EFFORT set karta hai
+- Credit khatam / auth / bad-request jaise errors pe poora run turant
+  rukta hai (har product pe fail karke 700 calls waste nahi hoti) aur
+  exit code non-zero hota hai
+- MAX_RUNTIME_SECONDS ke baad loop rukta hai, workflow ke 55-min
+  timeout se pehle - jo product beech mein ho wo agle run mein hoga
+
 Requires GitHub Secrets:
-    SUPABASE_URL, SUPABASE_SERVICE_KEY, GEMINI_API_KEY,
+    SUPABASE_URL, SUPABASE_SERVICE_KEY, ANTHROPIC_API_KEY,
     SHOPIFY_STORE_DOMAIN, SHOPIFY_CLIENT_ID, SHOPIFY_CLIENT_SECRET
 
 Usage:
@@ -39,15 +52,27 @@ mein mile the):
 import os
 import re
 import time
+
+import anthropic
 import requests
 from supabase import create_client
 
 BATCH_SIZE = int(os.environ.get("BATCH_SIZE", "200"))
-RATE_LIMIT_DELAY = 4.5  # Gemini free-tier RPM-limit (10-15/min) respect karne ke liye
+RATE_LIMIT_DELAY = 0.2  # 429 pe SDK khud retry karta hai (backoff ke saath)
 API_VERSION = "2025-01"
-GEMINI_MODEL = "gemini-2.0-flash-lite"
-GEMINI_API_URL = f"https://generativelanguage.googleapis.com/v1beta/models/{GEMINI_MODEL}:generateContent"
+CLAUDE_MODEL = os.environ.get("REPHRASE_MODEL", "claude-opus-5-5")
+CLAUDE_EFFORT = os.environ.get("REPHRASE_EFFORT", "low")
 MAX_DESCRIPTION_CHARS = 6000
+MAX_RUNTIME_SECONDS = int(os.environ.get("MAX_RUNTIME_SECONDS", str(50 * 60)))  # workflow timeout 55 min
+
+# Ye errors kisi ek product ki wajah se nahi hote (credit khatam, galat key,
+# galat model/param) - inpe poora run rok do
+FATAL_API_ERRORS = (
+    anthropic.AuthenticationError,
+    anthropic.PermissionDeniedError,
+    anthropic.NotFoundError,
+    anthropic.BadRequestError,
+)
 
 REPHRASE_PROMPT = """Yahan ek product ki details hain, jinse tumhe Luxella (luxury goods reseller) ke liye ek premium, editorial-style product description banani hai - HTML format mein.
 
@@ -107,22 +132,28 @@ def strip_code_fence(text):
     return text.strip()
 
 
-def rephrase_with_gemini(name, brand, description_text):
-    api_key = os.environ["GEMINI_API_KEY"]
+def rephrase_with_claude(client, name, brand, description_text):
     truncated = description_text[:MAX_DESCRIPTION_CHARS]
     prompt = REPHRASE_PROMPT.format(name=name or "", brand=brand or "", description=truncated)
-    payload = {"contents": [{"parts": [{"text": prompt}]}]}
 
-    resp = requests.post(
-        f"{GEMINI_API_URL}?key={api_key}",
-        headers={"Content-Type": "application/json"},
-        json=payload,
-        timeout=60,
+    response = client.beta.messages.create(
+        model=CLAUDE_MODEL,
+        max_tokens=16000,
+        output_config={"effort": CLAUDE_EFFORT},
+        # Safety classifier decline kare to server khud dusre model pe chala deta hai
+        betas=["server-side-fallback-2026-07-01"],
+        fallbacks="default",
+        messages=[{"role": "user", "content": prompt}],
     )
-    if not resp.ok:
-        raise RuntimeError(f"Gemini API error {resp.status_code}: {resp.text[:500]}")
-    body = resp.json()
-    text = body["candidates"][0]["content"]["parts"][0]["text"]
+    if response.stop_reason == "refusal":
+        category = response.stop_details.category if response.stop_details else None
+        raise RuntimeError(f"Claude ne refuse kiya (category={category})")
+    if response.stop_reason == "max_tokens":
+        raise RuntimeError("Claude output max_tokens pe kat gaya")
+
+    text = "".join(block.text for block in response.content if block.type == "text")
+    if not text.strip():
+        raise RuntimeError(f"Claude se khaali response aaya (stop_reason={response.stop_reason})")
     return strip_code_fence(text)
 
 
@@ -163,19 +194,26 @@ def run():
         print("Koi products nahi mile rephrase karne ke liye - sab already done hain.")
         return 0
 
-    print(f"{len(candidates)} descriptions rephrase kar rahe hain (editorial format, Gemini)...")
+    print(f"{len(candidates)} descriptions rephrase kar rahe hain "
+          f"(editorial format, {CLAUDE_MODEL}, effort={CLAUDE_EFFORT})...")
 
+    client = anthropic.Anthropic(max_retries=5)  # ANTHROPIC_API_KEY env se
     access_token = None
     summary = {"rephrased": 0, "shopify_updated": 0, "errors": 0}
+    fatal = None
+    start = time.monotonic()
 
     for p in candidates:
+        if time.monotonic() - start > MAX_RUNTIME_SECONDS:
+            print(f"Max runtime ({MAX_RUNTIME_SECONDS}s) hit - baaki agle run mein.")
+            break
         try:
             plain_text = strip_html(p["description"])
             if not plain_text:
                 sb.table("products").update({"description_rephrased": True}).eq("id", p["id"]).execute()
                 continue
 
-            new_html = rephrase_with_gemini(p.get("name"), p.get("brand"), plain_text)
+            new_html = rephrase_with_claude(client, p.get("name"), p.get("brand"), plain_text)
 
             sb.table("products").update({
                 "description": new_html,
@@ -189,6 +227,11 @@ def run():
                 update_shopify_description(access_token, p["shopify_product_id"], new_html)
                 summary["shopify_updated"] += 1
 
+        except FATAL_API_ERRORS as e:
+            fatal = e
+            print(f"  [FATAL] Claude API error ({type(e).__name__}, request_id={e.request_id}): "
+                  f"{e.message} - run rok rahe hain")
+            break
         except Exception as e:
             summary["errors"] += 1
             print(f"  [ERROR] product id {p['id']}: {e}")
@@ -197,6 +240,8 @@ def run():
 
     print("\n=== Summary ===")
     print(summary)
+    if fatal is not None:
+        raise SystemExit(1)
     return summary["rephrased"]
 
 
