@@ -23,7 +23,7 @@ NOTE (2026-10-03): WAPAS CLAUDE PE - Gemini free tier se backlog clear
 nahi hua (42,308 pending, sirf 1,088 done). Ab Anthropic SDK
 (`anthropic` package) se Claude call hota hai. Credits wala purana
 issue dobara na ho, isliye:
-- Model REPHRASE_MODEL env se (default claude-opus-5-5), effort
+- Model REPHRASE_MODEL env se (default claude-sonnet-5-5), effort
   REPHRASE_EFFORT se (default "low" - simple rewrite task hai). Naam
   CLAUDE_* nahi rakha - Claude Code shell khud CLAUDE_EFFORT set karta hai
 - Credit khatam / auth / bad-request jaise errors pe poora run turant
@@ -60,7 +60,7 @@ from supabase import create_client
 BATCH_SIZE = int(os.environ.get("BATCH_SIZE", "200"))
 RATE_LIMIT_DELAY = 0.2  # 429 pe SDK khud retry karta hai (backoff ke saath)
 API_VERSION = "2025-01"
-CLAUDE_MODEL = os.environ.get("REPHRASE_MODEL", "claude-opus-5-5")
+CLAUDE_MODEL = os.environ.get("REPHRASE_MODEL", "claude-sonnet-5-5")
 CLAUDE_EFFORT = os.environ.get("REPHRASE_EFFORT", "low")
 MAX_DESCRIPTION_CHARS = 6000
 MAX_RUNTIME_SECONDS = int(os.environ.get("MAX_RUNTIME_SECONDS", str(50 * 60)))  # workflow timeout 55 min
