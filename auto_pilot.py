@@ -1,21 +1,21 @@
 """
 auto_pilot.py
 
-Push + Sync + Image-backfill teeno ko ek CONTINUOUS LOOP mein chalata
-hai - ek hi GitHub Actions job mein, bina baar-baar naye workflow-runs
-trigger kiye. Jab tak kisi bhi step mein kuch bhi pending/changed nahi
-milta (matlab poora catalog fully synced/pushed/imaged ho chuka hai),
-tab tak chalta rehta hai. GitHub Actions job max ~6 ghante tak chal
-sakta hai - isliye MAX_RUNTIME_MINUTES thoda kam (5h40m) rakha hai,
-safety margin ke liye.
+Push + Sync + Image-backfill + Background-removal chaaron ko ek
+CONTINUOUS LOOP mein chalata hai - ek hi GitHub Actions job mein, bina
+baar-baar naye workflow-runs trigger kiye. Jab tak kisi bhi step mein
+kuch bhi pending/changed nahi milta (matlab poora catalog fully
+synced/pushed/imaged/bg-removed ho chuka hai), tab tak chalta rehta
+hai. GitHub Actions job max ~6 ghante tak chal sakta hai - isliye
+MAX_RUNTIME_MINUTES thoda kam (5h40m) rakha hai, safety margin ke liye.
 
 Kaam kaise karta hai:
 - Har round mein: shopify_push.run() -> shopify_sync.run() ->
-  shopify_image_backfill.run() - teeno call hote hain, har ek apna
-  BATCH_SIZE env var use karta hai
-- Agar teeno se total kaam (pushed + synced-changed + images-processed)
-  0 aaye - matlab genuinely sab kuch complete hai, loop khud ruk jaata
-  hai
+  shopify_image_backfill.run() -> shopify_bg_removal.run() - chaaron
+  call hote hain, har ek apna BATCH_SIZE env var use karta hai
+- Agar chaaron se total kaam (pushed + synced-changed + images-
+  processed + bg-removed) 0 aaye - matlab genuinely sab kuch complete
+  hai, loop khud ruk jaata hai
 - Agar max runtime cap hit ho jaaye (backlog bohot bada hai), loop
   gracefully ruk jaata hai - agli scheduled run (jo already automatic
   hai) continue kar degi
@@ -30,6 +30,8 @@ Env vars (optional, defaults reasonable hain):
         crash ho jaaye)
     SYNC_BATCH_SIZE (default 500)
     IMAGE_BATCH_SIZE (default 300)
+    BG_REMOVAL_BATCH_SIZE (default 50 - background removal CPU-heavy
+        hai, chhota batch rakha hai)
 
 Usage:
     python auto_pilot.py
@@ -51,6 +53,7 @@ def run():
     total_pushed = 0
     total_synced = 0
     total_imaged = 0
+    total_bg_removed = 0
 
     while (datetime.now() - start) < timedelta(minutes=MAX_RUNTIME_MINUTES):
         round_num += 1
@@ -83,8 +86,16 @@ def run():
         imaged = shopify_image_backfill.run() or 0
         total_imaged += imaged
 
-        round_total = pushed + synced + imaged
-        print(f"\nRound {round_num} summary: pushed={pushed}, synced={synced}, imaged={imaged}")
+        os.environ["BATCH_SIZE"] = os.environ.get("BG_REMOVAL_BATCH_SIZE", "50")
+        import shopify_bg_removal
+        importlib.reload(shopify_bg_removal)
+        print("\n--- BACKGROUND REMOVAL phase ---")
+        bg_removed = shopify_bg_removal.run() or 0
+        total_bg_removed += bg_removed
+
+        round_total = pushed + synced + imaged + bg_removed
+        print(f"\nRound {round_num} summary: pushed={pushed}, synced={synced}, "
+              f"imaged={imaged}, bg_removed={bg_removed}")
 
         if round_total == 0:
             print("\n*** Sab kuch complete hai - kisi bhi step mein kuch bhi pending nahi mila. Loop rok rahe hain. ***")
@@ -101,6 +112,7 @@ def run():
     print(f"  Total pushed: {total_pushed}")
     print(f"  Total synced (changed): {total_synced}")
     print(f"  Total images processed: {total_imaged}")
+    print(f"  Total backgrounds removed: {total_bg_removed}")
     print(f"{'=' * 60}")
 
 

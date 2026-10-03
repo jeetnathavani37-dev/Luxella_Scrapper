@@ -1,0 +1,43 @@
+name: Remove Product Background
+
+on:
+  schedule:
+    - cron: '0 7,19 * * *'   # din mein 2 baar
+  workflow_dispatch:
+    inputs:
+      batch_size:
+        description: 'Ek run mein kitne products process karne hain'
+        required: false
+        default: '50'
+
+jobs:
+  bg-removal:
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Cache rembg model
+        uses: actions/cache@v4
+        with:
+          path: ~/.u2net
+          key: u2net-model-v1
+
+      - name: Install dependencies
+        run: pip install requests supabase rembg
+
+      - name: Remove backgrounds
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}
+          SHOPIFY_STORE_DOMAIN: ${{ secrets.SHOPIFY_STORE_DOMAIN }}
+          SHOPIFY_CLIENT_ID: ${{ secrets.SHOPIFY_CLIENT_ID }}
+          SHOPIFY_CLIENT_SECRET: ${{ secrets.SHOPIFY_CLIENT_SECRET }}
+          BATCH_SIZE: ${{ github.event.inputs.batch_size || '50' }}
+        run: python shopify_bg_removal.py
