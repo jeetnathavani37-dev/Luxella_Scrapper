@@ -27,13 +27,7 @@
           },
           {
             "type": "command",
-            "if": "Bash(git push *--force*)",
-            "command": "echo '{\"hookSpecificOutput\":{\"hookEventName\":\"PreToolUse\",\"permissionDecision\":\"deny\",\"permissionDecisionReason\":\"Force push is blocked by hook\"}}'"
-          },
-          {
-            "type": "command",
-            "if": "Bash(git push *-f*)",
-            "command": "echo '{\"hookSpecificOutput\":{\"hookEventName\":\"PreToolUse\",\"permissionDecision\":\"deny\",\"permissionDecisionReason\":\"Force push (-f) is blocked by hook\"}}'"
+            "command": "python3 \"$CLAUDE_PROJECT_DIR\"/.claude/hooks/block-force-push.py"
           }
         ]
       }

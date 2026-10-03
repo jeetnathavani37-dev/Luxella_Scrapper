@@ -35,6 +35,7 @@ Same tarah `is_duplicate()` = `shopify_push.run()` ka duplicate rule (`existing 
 
 `luxella_price_report` `products.price` (source retailer price, `currency` mein) select karta hai.
 2026-09-28 ko live Supabase pe verify ho gaya (e.g. `price: 125.1, currency: USD`) — charon tools live data pe chal gaye.
+2026-10-03 ko dobara verify (`~/.luxella.env` se): 51,383 products, 49,021 pushed, 212 source pe OOS lekin Shopify pe in-stock, sync dry-run (limit 5) = 5 create / 5 update / 0 dupes.
 
 ## Supabase key format
 
@@ -53,10 +54,12 @@ Naya `sb_secret_...` format client-side hi `Invalid API key` de deta hai — `SU
 
 ## Register
 
-Claude Code (already done, user scope, name `luxella`):
+Claude Code (2026-10-03 ko register hua, user scope, name `luxella`, status ✔ Connected):
 
 ```
-claude mcp add luxella -s user -- ~/repos/Luxella_Scrapper/.venv/bin/python ~/repos/Luxella_Scrapper/luxella_mcp.py
+claude mcp add luxella -s user -- /root/Luxella_Scrapper/.venv/bin/python /root/Luxella_Scrapper/luxella_mcp.py
 ```
+
+Check: `claude mcp get luxella`
 
 Hermes: same command apne MCP server config mein daalo.
