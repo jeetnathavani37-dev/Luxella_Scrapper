@@ -22,6 +22,11 @@ migration, SQL editor mein chalao):
       add column if not exists bg_removed boolean,
       add column if not exists bg_removed_at timestamptz;
 
+Off-switch (live store pe images badalta hai, isliye default band hai):
+    - Manual "Run workflow" (GITHUB_EVENT_NAME=workflow_dispatch) pe chalta hai
+    - Schedule aur auto_pilot.py ka phase sirf BG_REMOVAL_ENABLED=1 pe chalte hain
+    - Local test: BG_REMOVAL_ENABLED=1 BATCH_SIZE=5 python shopify_bg_removal.py
+
 Usage:
     BATCH_SIZE=50 python shopify_bg_removal.py
 """
@@ -125,7 +130,17 @@ def mark_bg_removed(sb, product_id):
     }).eq("id", product_id).execute()
 
 
-def run():
+def is_enabled(manual_ok=False):
+    if os.environ.get("BG_REMOVAL_ENABLED") == "1":
+        return True
+    return manual_ok and os.environ.get("GITHUB_EVENT_NAME") == "workflow_dispatch"
+
+
+def run(manual_ok=False):
+    if not is_enabled(manual_ok):
+        print("Background removal band hai (BG_REMOVAL_ENABLED=1 set nahi) - skip.")
+        return 0
+
     sb = get_supabase()
     pending = fetch_pending_products(sb, BATCH_SIZE)
 
@@ -169,4 +184,4 @@ def run():
 
 
 if __name__ == "__main__":
-    run()
+    run(manual_ok=True)
