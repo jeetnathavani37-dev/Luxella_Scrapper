@@ -36,7 +36,6 @@ import time
 from datetime import datetime, timezone
 
 import requests
-from rembg import remove
 from supabase import create_client
 
 BATCH_SIZE = int(os.environ.get("BATCH_SIZE", "50"))
@@ -140,6 +139,10 @@ def run(manual_ok=False):
     if not is_enabled(manual_ok):
         print("Background removal band hai (BG_REMOVAL_ENABLED=1 set nahi) - skip.")
         return 0
+
+    # rembg sirf yahan import - auto-pilot.yml rembg install nahi karta, aur band
+    # hone pe auto_pilot.py ko is module ka import crash nahi karna chahiye
+    from rembg import remove
 
     sb = get_supabase()
     pending = fetch_pending_products(sb, BATCH_SIZE)
