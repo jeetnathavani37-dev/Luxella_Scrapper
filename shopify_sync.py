@@ -23,6 +23,9 @@ auto_pilot.py (jo push+sync+image-backfill ko continuous loop mein
 chalata hai jab tak sab kuch complete na ho jaaye) pata laga sake ki
 sync mein abhi bhi meaningful kaam bacha hai ya nahi.
 
+NOTE (2026-10-04): source `price` 0 wale products ka price Shopify pe nahi
+bhejte aur stock 0 kar dete hain (pehle Rs799 floor price pe in-stock dikhte the).
+
 NOTE (2026-09-28): fetch_synced_products() ab stock-mismatch wale products
 PEHLE uthata hai (source pe sold out lekin Shopify pe abhi bhi in-stock,
 aur ulta). Pehle sirf shopify_synced_at rotation tha - ~48k products mein
@@ -90,7 +93,7 @@ def fetch_synced_products(sb, limit):
     def base():
         return (
             sb.table("products")
-            .select("id,name,selling_price_inr,compare_at_price_inr,in_stock,shopify_variant_id,"
+            .select("id,name,price,selling_price_inr,compare_at_price_inr,in_stock,shopify_variant_id,"
                     "shopify_inventory_item_id,last_synced_price_inr,last_synced_compare_at_price_inr,"
                     "last_synced_in_stock")
             .eq("pushed_to_shopify", True)
@@ -161,7 +164,10 @@ def run():
         try:
             current_price = p.get("selling_price_inr")
             current_compare_at = p.get("compare_at_price_inr")
-            current_stock = bool(p.get("in_stock"))
+            # Source price 0 = parse fail / free item: Shopify pe floor price (Rs799) pe na bike -
+            # price mat bhejo, stock 0 rakho.
+            zero_price = not p.get("price") or float(p["price"]) <= 0
+            current_stock = bool(p.get("in_stock")) and not zero_price
 
             last_price = p.get("last_synced_price_inr")
             last_compare_at = p.get("last_synced_compare_at_price_inr")
@@ -178,11 +184,13 @@ def run():
             changed = False
 
             price_changed = (
-                current_price is not None
+                not zero_price
+                and current_price is not None
                 and (last_price is None or float(current_price) != float(last_price))
             )
             compare_at_changed = (
-                current_compare_at is not None
+                not zero_price
+                and current_compare_at is not None
                 and (last_compare_at is None or float(current_compare_at) != float(last_compare_at))
             )
             if price_changed or compare_at_changed:
@@ -205,7 +213,11 @@ def run():
             if not changed:
                 summary["unchanged"] += 1
 
-            mark_synced(sb, p["id"], current_price, current_compare_at, current_stock)
+            if zero_price:
+                # last_synced_price ko purana hi rehne do - jab asli price wapas aaye to update chale
+                mark_synced(sb, p["id"], last_price, last_compare_at, current_stock)
+            else:
+                mark_synced(sb, p["id"], current_price, current_compare_at, current_stock)
 
         except Exception as e:
             summary["errors"] += 1

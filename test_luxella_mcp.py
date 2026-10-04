@@ -8,7 +8,7 @@ for k in ("SUPABASE_URL", "SUPABASE_SERVICE_KEY"):
 
 import luxella_mcp as m
 
-base = {"shopify_variant_id": "1", "shopify_inventory_item_id": "2",
+base = {"shopify_variant_id": "1", "shopify_inventory_item_id": "2", "price": 59.99,
         "selling_price_inr": 9999, "last_synced_price_inr": 9999.0,
         "compare_at_price_inr": 15399, "last_synced_compare_at_price_inr": 15399,
         "in_stock": True, "last_synced_in_stock": True}
@@ -19,6 +19,8 @@ assert m.price_stock_changes({**base, "selling_price_inr": 8999}) == ["price 999
 assert m.price_stock_changes({**base, "in_stock": False}) == ["in_stock True -> False"]
 assert m.price_stock_changes({**base, "last_synced_in_stock": None}) == ["in_stock None -> True"]
 assert m.price_stock_changes({**base, "shopify_variant_id": None}) is None
+# source price 0: price nahi bhejte (floor Rs799), sirf stock 0
+assert m.price_stock_changes({**base, "price": 0, "selling_price_inr": 799}) == ["in_stock True -> False"]
 
 # duplicate rule (mirror of shopify_push.run)
 assert m.is_duplicate({"fp": 5000}, "fp", 5000)

@@ -89,11 +89,12 @@ def price_stock_changes(p):
         return None
     price, last_price = p.get("selling_price_inr"), p.get("last_synced_price_inr")
     mrp, last_mrp = p.get("compare_at_price_inr"), p.get("last_synced_compare_at_price_inr")
-    stock, last_stock = bool(p.get("in_stock")), p.get("last_synced_in_stock")
+    zero_price = not p.get("price") or float(p["price"]) <= 0  # sync: price nahi bhejta, stock 0
+    stock, last_stock = bool(p.get("in_stock")) and not zero_price, p.get("last_synced_in_stock")
     changes = []
-    if price is not None and (last_price is None or float(price) != float(last_price)):
+    if not zero_price and price is not None and (last_price is None or float(price) != float(last_price)):
         changes.append(f"price {last_price} -> {price}")
-    if mrp is not None and (last_mrp is None or float(mrp) != float(last_mrp)):
+    if not zero_price and mrp is not None and (last_mrp is None or float(mrp) != float(last_mrp)):
         changes.append(f"compare_at {last_mrp} -> {mrp}")
     if last_stock is None or stock != last_stock:
         changes.append(f"in_stock {last_stock} -> {stock}")

@@ -84,6 +84,7 @@ def fetch_draft_products(sb, limit):
         .eq("pushed_to_shopify", True)
         .not_.is_("shopify_product_id", "null")
         .or_("shopify_status.neq.active,shopify_status.is.null")
+        .gt("price", 0)  # price-0 products (2026-10-04 Draft kiye gaye) ko wapas live mat karo
         .limit(limit)
         .execute()
     )

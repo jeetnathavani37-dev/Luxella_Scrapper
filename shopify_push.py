@@ -14,6 +14,10 @@ NOTE (2026-09-15): Duplicate-prevention add kiya - push karne se pehle
 fingerprint (brand+naam) compute karke check karte hain ki koi cheaper
 (ya equal) duplicate PEHLE SE Shopify pe push ho chuka hai kya.
 
+NOTE (2026-10-04): source `price` 0 wale products push nahi hote. Pehle pricing
+floor unhe Rs799 pe bana deta tha - GOAT ke Air Jordans, Alo ke yoga blocks,
+"Shipping Protection"/gift cards sab Rs799 mein live+in-stock the.
+
 NOTE (2026-09-17): BADA performance fix - get_existing_fingerprint_
 prices() poore 46,000+ pushed products ko EK HI query mein fetch kar
 raha tha, jisse Postgres "statement timeout" de raha tha (auto-pilot
@@ -86,6 +90,7 @@ def fetch_pending_products(sb, limit):
         .eq("pushed_to_shopify", False)
         .is_("is_duplicate", "null")
         .not_.is_("selling_price_inr", "null")
+        .gt("price", 0)  # source price 0 = parse fail / free item - floor price (Rs799) pe list ho jaata tha
         .not_.is_("name", "null")
         .neq("name", "")
         .order("id")  # stable batch - MCP preview aur apply same rows dekhein
