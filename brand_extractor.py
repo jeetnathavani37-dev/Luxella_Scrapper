@@ -37,6 +37,10 @@ KNOWN_BRANDS = [
     "Ralph Lauren", "Polo Ralph Lauren", "Calvin Klein", "Tommy Hilfiger",
     "Levi's", "Levis", "Champion", "Carhartt", "Patagonia", "The North Face",
     "Columbia", "Under Armour", "Lululemon",
+    # 2026-10-04: kicksmachine/goat ke un-pehchaane products mein sabse aam
+    "Golden Goose", "Gallery Dept", "Ted Baker", "Tom Ford", "Abercrombie & Fitch", "Abercrombie",
+    "Pop Mart", "Gentle Monster", "Loewe", "Chrome Hearts", "Vale Forever", "Vivobarefoot",
+    "Paco Rabanne", "Mulberry", "Pokémon",
 ]
 
 # Sort by length descending, taaki "Off-White" "White" se pehle check ho
@@ -64,3 +68,61 @@ def extract_brand(name, fallback=None):
             return brand
 
     return fallback
+
+
+# --- Display names (2026-10-04) -------------------------------------------
+# Supabase `products.brand` mein aksar SITE ka slug hota hai (jaise
+# "stevemadden", "kicksmachine") - customer-facing text mein ye galat
+# dikhta hai ("by kicksmachine"). Single-brand sites ke slug -> asli naam:
+BRAND_DISPLAY = {
+    "aimeekestenberg": "Aimee Kestenberg", "aloyoga": "Alo Yoga", "adanola": "Adanola",
+    "athleta": "Athleta", "beyondyoga": "Beyond Yoga", "cambridgesatchel": "The Cambridge Satchel Company",
+    "carmensol": "Carmen Sol", "coach": "Coach", "cultgaia": "Cult Gaia", "demellier": "DeMellier",
+    "francesvalentine": "Frances Valentine", "frye": "Frye", "furla": "Furla", "goodamerican": "Good American",
+    "hobobags": "HOBO", "ilovedooney": "Dooney & Bourke", "jwpei": "JW PEI", "karllagerfeld": "Karl Lagerfeld",
+    "landsend": "Lands' End", "littleliffner": "Little Liffner", "loefflerrandall": "Loeffler Randall",
+    "lululemon": "lululemon", "mansurgavriel": "Mansur Gavriel", "marcjacobs": "Marc Jacobs",
+    "michaelkors": "Michael Kors", "nagnata": "Nagnata", "ninashoes": "Nina", "nodaleto": "Nodaleto",
+    "on": "On", "penation": "P.E Nation", "polene": "Polène", "ralphlauren": "Ralph Lauren",
+    "simonmiller": "Simon Miller", "songmont": "Songmont", "splits59": "Splits59", "stanley1913": "Stanley",
+    "staud": "STAUD", "stevemadden": "Steve Madden", "swoveralls": "Swoveralls", "toryburch": "Tory Burch",
+    "varley": "Varley", "verabradley": "Vera Bradley", "victoriabeckham": "Victoria Beckham",
+    "victoriabeckhambeauty": "Victoria Beckham Beauty", "vincecamuto": "Vince Camuto", "wandler": "Wandler",
+    "yuzefi": "Yuzefi", "katespade": "Kate Spade", "adidas": "adidas",
+}
+
+# Multi-brand retailers/marketplaces: inka naam kabhi brand nahi hota.
+# sites.py ke is_marketplace=True sites + jo sites.py se hat chuki hain
+# par purane products abhi bhi unke slug ke saath DB mein hain.
+EXTRA_MARKETPLACES = {"kicksmachine", "secretsales", "secret sales"}
+
+
+def _marketplace_slugs():
+    try:
+        import sites
+        site_list = getattr(sites, "SITES", None) or next(
+            v for v in vars(sites).values() if isinstance(v, list) and v and isinstance(v[0], dict))
+        return {s["name"].lower() for s in site_list if s.get("is_marketplace")} | EXTRA_MARKETPLACES
+    except Exception:
+        return set(EXTRA_MARKETPLACES)
+
+
+_MARKETPLACES = None
+
+
+def display_brand(brand, name=None):
+    """Customer-facing brand naam. None lautata hai agar pakka pata nahi -
+    tab caller brand ka naam likhe hi nahi (galat naam se behtar)."""
+    global _MARKETPLACES
+    if _MARKETPLACES is None:
+        _MARKETPLACES = _marketplace_slugs()
+    b = (brand or "").strip()
+    if not b or b.lower() == "none":
+        return extract_brand(name)
+    if b.lower() in _MARKETPLACES:
+        return extract_brand(name)            # marketplace: asli brand product name se
+    if b.lower() in BRAND_DISPLAY:
+        return BRAND_DISPLAY[b.lower()]
+    if b != b.lower():                         # "Nike", "Fear of God" - pehle se sahi naam
+        return b
+    return None                                # anjaan lowercase slug - andaaza mat lagao

@@ -60,6 +60,7 @@ import tempfile
 import time
 import requests
 from supabase import create_client
+from brand_extractor import display_brand
 
 BATCH_SIZE = int(os.environ.get("BATCH_SIZE", "200"))
 RATE_LIMIT_DELAY = 4.5  # Gemini free-tier RPM-limit (10-15/min) respect karne ke liye
@@ -90,6 +91,7 @@ Rules:
 - Koi fact mat hatao jo original mein tha
 - Sirf VALID HTML output do (p, h3, ul, li tags) - koi preamble, explanation, ya markdown nahi
 - Brand ka naam "Luxella" ke saath sirf "curated by/sourced by" context mein use karo - kabhi "authorized/official partner" jaisa mat likho
+- Agar Brand "(unknown)" hai to koi brand ka naam mat likho/andaaza mat lagao - sirf product name use karo
 """
 
 
@@ -183,6 +185,9 @@ def rephrase_with_claude_cli(name, brand, description_text):
 
 
 def rephrase(name, brand, description_text):
+    # DB ka `brand` aksar site-slug hota hai ("kicksmachine", "stevemadden") - asli naam do,
+    # warna "(unknown)" taaki model "by kicksmachine" jaisa galat brand na likhe
+    brand = display_brand(brand, name) or "(unknown)"
     if BACKEND == "claude-cli":
         return rephrase_with_claude_cli(name, brand, description_text)
     if BACKEND == "gemini":
