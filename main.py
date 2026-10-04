@@ -14,6 +14,14 @@ ke baad 1 "kabhi-nahi" site try hoti hai.
 
 NOTE (2026-09-13): "use_firecrawl": True routing add kiya.
 
+NOTE (2026-10-04): Har run 60-min timeout pe CANCEL ho raha tha. Do wajah:
+1. Har product 2 HTTP calls (~0.8s) - ab db.save_products() site-batch mein
+   save karta hai (ek baar padho, bulk insert/update).
+2. get_staleness_order() sirf 1000 rows padhta tha (PostgREST limit) - 60k
+   mein se - isliye order galat tha. Ab id-paged poori table padhta hai.
+Saath mein MAX_RUN_MINUTES (default 45, +5 min save grace) - itne minute baad nayi site shuru
+nahi hoti, run khud saaf khatam hota hai (cancel hoke log/summary nahi khote).
+
 NOTE (2026-09-28): SCRAPE_GROUP add kiya - Firecrawl credits (5 per
 page) 17 Sept ke aas-paas khatam ho gaye the kyunki 37 Firecrawl sites
 har 6 ghante chal rahi thi. Ab do alag groups hain:
@@ -33,7 +41,8 @@ list se hataana (jab credits/plan decide ho jaye).
 """
 import os
 import re
-from collections import defaultdict
+import time
+from collections import Counter, defaultdict
 from patchright.sync_api import sync_playwright
 from supabase import create_client
 
@@ -43,7 +52,7 @@ from shopify_scraper import scrape_shopify
 from scraperapi_scraper import scrape_site_scraperapi
 from scrapegraph_scraper import scrape_site_scrapegraph
 from firecrawl_scraper import scrape_site_firecrawl
-from db import save_product
+from db import save_product, save_products
 
 # Firecrawl sites jinse abhi tak koi data nahi aaya (2026-09-28 tak).
 FIRECRAWL_PAUSED = {
@@ -124,10 +133,18 @@ def get_staleness_order(sites):
         url = os.environ["SUPABASE_URL"]
         key = os.environ["SUPABASE_SERVICE_KEY"]
         sb = create_client(url, key)
-        resp = sb.table("products").select("site,scraped_at").execute()
+        # PostgREST ek baar mein max 1000 rows deta hai - poori table id-paged padho
+        all_rows, last_id = [], 0
+        while True:
+            page = (sb.table("products").select("id,site,scraped_at")
+                    .gt("id", last_id).order("id").limit(1000).execute().data)
+            all_rows += page
+            if len(page) < 1000:
+                break
+            last_id = page[-1]["id"]
 
         last_scraped = defaultdict(lambda: None)
-        for row in resp.data:
+        for row in all_rows:
             site_name = row.get("site")
             ts = row.get("scraped_at")
             if site_name and ts:
@@ -161,6 +178,9 @@ def get_staleness_order(sites):
 
 def run():
     summary = {"new": 0, "changed": 0, "unchanged": 0, "errors": 0}
+    started = time.time()
+    deadline = started + float(os.environ.get("MAX_RUN_MINUTES", "45")) * 60
+    skipped_sites = []
 
     only_site_raw = os.environ.get("ONLY_SITE", "").strip()
     if only_site_raw:
@@ -177,6 +197,9 @@ def run():
 
     with sync_playwright() as p:
         for config in sites:
+            if time.time() > deadline:
+                skipped_sites.append(config["name"])
+                continue
             print(f"\n=== Scraping: {config['name']} ===")
             try:
                 if config.get("platform") == "shopify":
@@ -194,19 +217,29 @@ def run():
                     products = scrape_site(page, config)
                     browser.close()
 
+                by_site = defaultdict(list)
                 for product in products:
+                    by_site[product.get("site") or config["name"]].append({**product, "site": product.get("site") or config["name"]})
+                for site_products in by_site.values():
+                    t0 = time.time()
                     try:
-                        result = save_product(product)
-                        if result == "new":
-                            summary["new"] += 1
-                        elif result == "unchanged":
-                            summary["unchanged"] += 1
-                        else:
-                            summary["changed"] += 1
-                            print(f"  CHANGE: {product.get('name')} -> {result}")
+                        res = save_products(site_products, deadline=deadline + 5 * 60)
                     except Exception as e:
-                        summary["errors"] += 1
-                        print(f"  [ERROR saving product] {e}")
+                        # batch fail (jaise ek kharab row se bulk insert) - purana per-product rasta, slow lekin sahi
+                        print(f"  [WARN batch save fail, per-product fallback] {e}")
+                        res = Counter()
+                        for product in site_products:
+                            try:
+                                r = save_product(product)
+                                res["new" if r == "new" else "unchanged" if r == "unchanged" else "changed"] += 1
+                            except Exception as e2:
+                                res["errors"] += 1
+                                print(f"  [ERROR saving product] {e2}")
+                    for k in ("new", "changed", "unchanged", "errors"):
+                        summary[k] += res.get(k, 0)
+                    details = {k: v for k, v in res.items() if k not in ("new", "changed", "unchanged") and v}
+                    print(f"  saved in {time.time() - t0:.0f}s: new={res['new']} changed={res['changed']} "
+                          f"unchanged={res['unchanged']} {details or ''}")
 
             except Exception as e:
                 summary["errors"] += 1
@@ -214,6 +247,10 @@ def run():
 
     print("\n=== Summary ===")
     print(summary)
+    print(f"Run time: {(time.time() - started) / 60:.1f} min")
+    if skipped_sites:
+        # agla run staleness order se inhe pehle uthayega
+        print(f"MAX_RUN_MINUTES khatam - {len(skipped_sites)} sites agli baar: {', '.join(skipped_sites)}")
 
 
 if __name__ == "__main__":
