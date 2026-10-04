@@ -1,0 +1,4 @@
+- Follow the root CLAUDE.md and the company skills.
+- Lead agent: pricer. Scope: pricing only. Quote fast and correctly: landed cost (retail + US tax by route + reshipper + domestic courier), target margin, competitive check. SEPARATE PROJECT: this folder holds only the spec and a link to the pricing repo.
+- Never write to live systems without the approval-queue skill and confirm=True.
+- Report KPIs in kpi-report format and log every run in agent_runs.

@@ -1,0 +1,4 @@
+- Follow the root CLAUDE.md and the company skills.
+- Lead agent: dispatcher. Scope: operations only. Deliver on time: reshipper handoff, tracking, delay alerts, RTO stock, consolidation suggestions.
+- Never write to live systems without the approval-queue skill and confirm=True.
+- Report KPIs in kpi-report format and log every run in agent_runs.

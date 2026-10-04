@@ -1,0 +1,4 @@
+- Follow the root CLAUDE.md and the company skills.
+- Lead agent: storyteller. Scope: marketing only. Grow reach and trust with on-brand content: product posts, educational pieces, newsletter, product copy.
+- Never write to live systems without the approval-queue skill and confirm=True.
+- Report KPIs in kpi-report format and log every run in agent_runs.
