@@ -17,7 +17,14 @@ capture nahi ho rahi thi:
    hain (size, price, sku, availability har ek ke liye) - taaki Shopify
    push karte waqt customer ko size-selector mil sake, sirf ek size
    nahi.
+
+NOTE (2026-10-04): Bechne-layak nahi wale listings skip - jinke saare variants
+$0 hain (Alo ke "-gwp"/"-loyalty" free gifts, sample, "100% off" add-ons) aur
+non-products (gift card, shipping protection, donation, additional fees).
+Ye pehle Rs799 floor price pe Shopify pe live ho jaate the. Price ab pehle
+non-zero variant ka (pehla variant $0 ho sakta hai).
 """
+import re
 import requests
 from datetime import datetime, timezone
 
@@ -27,6 +34,22 @@ HEADERS = {
     "Accept": "application/json, text/plain, */*",
     "Accept-Language": "en-US,en;q=0.9",
 }
+
+
+NON_PRODUCT = re.compile(
+    r"gift ?card|e-?gift|shipping protection|route protection|package protection|"
+    r"donation|additional fees?|gift with purchase|free gift|\bgwp\b",
+    re.I,
+)
+
+
+def is_sellable(product):
+    """False = free gift / sample / fee / gift card - Luxella pe list nahi karna."""
+    text = " ".join([product.get("title") or "", product.get("product_type") or "", product.get("handle") or ""])
+    if NON_PRODUCT.search(text) or re.search(r"(^|-)(gwp|loyalty)(-|$)", product.get("handle") or ""):
+        return False
+    prices = [float(v["price"]) for v in product.get("variants", []) if v.get("price")]
+    return any(pr > 0 for pr in prices)
 
 
 def find_option_index(product, option_names):
@@ -58,6 +81,8 @@ def build_variants_list(product):
     push karte waqt customer ko size-selector dene ke liye."""
     variants_out = []
     for v in product.get("variants", []):
+        if not v.get("price") or float(v["price"]) <= 0:
+            continue  # $0 variant = free/gift option, bechne ke liye nahi
         variants_out.append({
             "size": extract_size(product, v),
             "sku": v.get("sku"),
@@ -86,7 +111,9 @@ def scrape_shopify(config):
             break
 
         for p in products:
-            variants = p.get("variants", [])
+            if not is_sellable(p):
+                continue
+            variants = [v for v in p.get("variants", []) if v.get("price") and float(v["price"]) > 0]
             variant = variants[0] if variants else {}
 
             images = p.get("images", [])
