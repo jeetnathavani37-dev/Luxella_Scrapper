@@ -31,6 +31,7 @@ from datetime import datetime, timezone
 from supabase import create_client
 from pricing import calculate_pricing
 from dedup_utils import compute_fingerprint
+from brand_extractor import display_brand
 
 BATCH_SIZE = int(os.environ.get("BATCH_SIZE", "200"))
 RATE_LIMIT_DELAY = 0.6
@@ -172,6 +173,9 @@ def get_size_variants(p):
 def build_shopify_payload(p):
     name = (p.get("name") or "").strip()
     brand = (p.get("brand") or p.get("site") or "luxella").strip()
+    # DB ka `brand` aksar site-slug hota hai ("stevemadden", "goat") - Shopify pe asli naam dikhao.
+    # Pata na chale to vendor "Luxella" aur title me koi brand nahi (galat naam se behtar)
+    shown_brand = display_brand(brand, name)
     sku = (p.get("sku") or "").strip() or f"LX-{p['id']}"
     price = str(p.get("selling_price_inr") or "0")
     compare_at = p.get("compare_at_price_inr")
@@ -179,7 +183,11 @@ def build_shopify_payload(p):
     first_image = get_first_image_url(p)
     description = p.get("description")
 
-    title = f"{brand.title()} {name}".strip()[:255]
+    if shown_brand and not name.lower().startswith(shown_brand.lower()):
+        title = f"{shown_brand} {name}"
+    else:
+        title = name or (shown_brand or "")
+    title = title.strip()[:255]
     body_html = description if description else f"<p>{title}</p><p>Sourced via Luxella.</p>"
 
     size_variants = get_size_variants(p)
@@ -213,9 +221,9 @@ def build_shopify_payload(p):
         "product": {
             "title": title,
             "body_html": body_html,
-            "vendor": brand.title(),
+            "vendor": shown_brand or "Luxella",
             "product_type": category.title(),
-            "tags": f"{brand}, {category}",
+            "tags": f"{shown_brand}, {category}" if shown_brand else category,
             "status": "active",
             "published": True,
             "variants": variants_payload,
