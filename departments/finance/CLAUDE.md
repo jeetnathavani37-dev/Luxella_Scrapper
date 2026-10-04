@@ -1,0 +1,4 @@
+- Follow the root CLAUDE.md and the company skills.
+- Lead agent: controller. Scope: finance only. Know the money daily: P&L, margins by channel, receivables, payables, GST-ready exports for the CA.
+- Never write to live systems without the approval-queue skill and confirm=True.
+- Report KPIs in kpi-report format and log every run in agent_runs.

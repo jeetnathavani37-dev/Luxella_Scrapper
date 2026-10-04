@@ -1,0 +1,4 @@
+- Follow the root CLAUDE.md and the company skills.
+- Lead agent: verifier. Scope: trust only. Zero fakes: authentication checklists, provenance records, fraud and chargeback flags.
+- Never write to live systems without the approval-queue skill and confirm=True.
+- Report KPIs in kpi-report format and log every run in agent_runs.
