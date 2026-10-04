@@ -26,12 +26,25 @@ supabase = create_client(SUPABASE_URL, SUPABASE_KEY)
 
 
 def get_existing_product(site, sku, product_url):
-    query = supabase.table("products").select("*").eq("site", site)
-    if sku:
-        query = query.eq("sku", sku)
-    else:
-        query = query.eq("product_url", product_url)
-    res = query.execute()
+    """Pehle product_url se match (har product ka apna URL). Pehle sku se match
+    karte the - lekin kai sites pe alag products ek hi sku share karte hain
+    (frye ke saare "Pre-Loved" = "_used", beyondyoga/stevemadden ke colours
+    same style-sku), to wo sab EK hi row ko har scrape pe overwrite karte the
+    aur roz nakli price-change log hota tha (2026-10-04: 697 aise sku).
+    sku fallback sirf un purani rows ke liye jinka product_url khaali hai."""
+    if product_url:
+        res = (supabase.table("products").select("*")
+               .eq("site", site).eq("product_url", product_url).limit(1).execute())
+        if res.data:
+            return res.data[0]
+        if not sku:
+            return None
+        res = (supabase.table("products").select("*")
+               .eq("site", site).eq("sku", sku).is_("product_url", "null").limit(1).execute())
+        return res.data[0] if res.data else None
+    if not sku:
+        return None
+    res = supabase.table("products").select("*").eq("site", site).eq("sku", sku).limit(1).execute()
     return res.data[0] if res.data else None
 
 
@@ -47,7 +60,15 @@ def log_change(site, sku, product_url, name, change_type, old_value, new_value):
     }).execute()
 
 
+PRICE_FIELDS = ("price", "price_inr", "landed_cost_inr", "selling_price_inr", "compare_at_price_inr")
+
+
 def save_product(product):
+    # Price 0 = free gift (GWP) ya scraper ko price mila hi nahi (GOAT pe AI extraction "0" deta hai).
+    # Isko "price pata nahi" maano - warna pricing floor (Rs799) lagta tha aur roz nakli 34->0 drop log hota tha.
+    if product.get("price") is not None and product["price"] <= 0:
+        product = {**product, "price": None}
+
     pricing_fields = calculate_pricing(
         product.get("price"),
         product.get("category"),
@@ -64,6 +85,10 @@ def save_product(product):
             "last_checked_at": datetime.now(timezone.utc).isoformat(),
         }).execute()
         return "new"
+
+    if product.get("price") is None:
+        # is scrape mein price nahi mila - purana (sahi) price aur pricing mat mitao
+        product = {k: v for k, v in product.items() if k not in PRICE_FIELDS}
 
     changes_found = []
     old_price = existing.get("price")
