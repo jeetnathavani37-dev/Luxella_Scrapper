@@ -215,7 +215,7 @@ def main():
 
     token = None
     if os.environ.get("EXPORT_JSONL"):
-        products = [json.loads(l) for l in open(os.environ["EXPORT_JSONL"]) if l.strip()]
+        products = [json.loads(line) for line in open(os.environ["EXPORT_JSONL"]) if line.strip()]
     else:
         token = get_access_token()
         products = export_products(token)

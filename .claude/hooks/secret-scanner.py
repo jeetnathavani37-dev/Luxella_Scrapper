@@ -181,7 +181,7 @@ def should_skip_file(file_path):
             chunk = f.read(1024)
             if b'\0' in chunk:
                 return True
-    except:
+    except OSError:
         return True
 
     return False
@@ -229,7 +229,7 @@ def scan_file(file_path):
                         'match': match.group(0)[:50] + '...' if len(match.group(0)) > 50 else match.group(0),
                         'full_line': line.strip()[:100]
                     })
-    except Exception as e:
+    except Exception:
         # Skip files that can't be read
         pass
 

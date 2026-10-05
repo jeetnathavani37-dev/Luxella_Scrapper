@@ -121,7 +121,7 @@ def run():
             except Exception as e:
                 print(f"  [ERROR] removing product id {item['id']}: {e}")
 
-    print(f"\n=== Summary ===")
+    print("\n=== Summary ===")
     print(f"Groups with duplicates: {len(duplicate_groups)}")
     print(f"Products kept (cheapest): {total_kept}")
     print(f"Products removed (pricier duplicates): {total_removed}")

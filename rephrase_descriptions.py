@@ -176,8 +176,8 @@ def rephrase_with_claude_cli(name, brand, description_text):
                               cwd=empty_dir, timeout=CLAUDE_TIMEOUT)
     try:
         out = json.loads(proc.stdout)
-    except ValueError:
-        raise RuntimeError(f"claude -p exit {proc.returncode}: {(proc.stderr or proc.stdout)[:500]}")
+    except ValueError as e:
+        raise RuntimeError(f"claude -p exit {proc.returncode}: {(proc.stderr or proc.stdout)[:500]}") from e
     if out.get("is_error") or proc.returncode != 0:
         # Max ki usage limit khatam ho to bhi yahin aata hai - error ke saath ruk jaate hain
         raise RuntimeError(f"claude -p error ({out.get('subtype')}): {str(out.get('result'))[:500]}")

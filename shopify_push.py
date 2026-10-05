@@ -28,7 +28,6 @@ mein DB-level index bhi add kiya (idx_products_pushed_dup,
 idx_products_pending) taaki filtering fast ho.
 """
 import os
-import re
 import time
 import requests
 from datetime import datetime, timezone
@@ -336,7 +335,7 @@ def run():
             shopify_variants = shopify_product["variants"]
 
             if size_variants:
-                for sv, shopify_v in zip(size_variants, shopify_variants):
+                for sv, shopify_v in zip(size_variants, shopify_variants, strict=False):
                     if sv["in_stock"]:
                         set_inventory(access_token, location_id, shopify_v["inventory_item_id"], 10)
                         time.sleep(RATE_LIMIT_DELAY)
