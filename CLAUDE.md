@@ -28,7 +28,8 @@ Read these before any non-trivial task:
 
 ## Agents and skills in this repo
 Sub-agents (.claude/agents): planner, builder, reviewer, designer, qa.
-Skills (.claude/skills): spec-first, agent-spec, safe-writes, ui-design-system, ship-check, luxella-context.
+Skills (.claude/skills): spec-first, agent-spec, safe-writes, ui-design-system, ship-check, luxella-context,
+approval-queue, kpi-report, eval-gate, luxury-voice (helpers in packages/core).
 
 ## Style
 - Reply to the founder in Hinglish, short and direct.
