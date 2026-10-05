@@ -92,25 +92,49 @@ def build_variants_list(product):
     return variants_out
 
 
+MAX_PAGES = 20  # 20 x 250 = 5000 products; is cap pe catalog "complete" nahi maana jaata
+
+
 def scrape_shopify(config):
+    return scrape_shopify_catalog(config)["products"]
+
+
+def scrape_shopify_catalog(config, get=requests.get):
+    """Return {products, seen_urls, complete, reason}.
+
+    complete=True sirf jab pagination khaali page pe khatam ho - tabhi "jo nahi dikha wo
+    site se hat gaya" maana ja sakta hai. Non-200 (jaise 429), network/JSON error ya
+    MAX_PAGES cap -> complete=False, jo pages mile wo products phir bhi return.
+    seen_urls mein har listed handle (is_sellable skip wale bhi) - wo delisted nahi hain.
+    """
     domain = config["domain"]
     site = config["name"]
     all_products = []
+    seen_urls = set()
     page = 1
+    complete, reason = False, "cap"
 
-    while page <= 20:
+    while page <= MAX_PAGES:
         url = f"{domain}/products.json?limit=250&page={page}"
-        resp = requests.get(url, timeout=20, headers=HEADERS)
-        if resp.status_code != 200:
-            print(f"  [Shopify] {url} -> status {resp.status_code}, stopping")
+        try:
+            resp = get(url, timeout=20, headers=HEADERS)
+            if resp.status_code != 200:
+                print(f"  [Shopify] {url} -> status {resp.status_code}, stopping")
+                reason = f"status {resp.status_code}"
+                break
+            data = resp.json()
+        except (requests.RequestException, ValueError) as e:
+            print(f"  [Shopify] {url} -> {type(e).__name__}, stopping")
+            reason = "error"
             break
-
-        data = resp.json()
         products = data.get("products", [])
         if not products:
+            complete, reason = True, "ok"
             break
 
         for p in products:
+            if p.get("handle"):
+                seen_urls.add(f"{domain}/products/{p['handle']}")
             if not is_sellable(p):
                 continue
             variants = [v for v in p.get("variants", []) if v.get("price") and float(v["price"]) > 0]
@@ -140,4 +164,4 @@ def scrape_shopify(config):
 
         page += 1
 
-    return all_products
+    return {"products": all_products, "seen_urls": seen_urls, "complete": complete, "reason": reason}
