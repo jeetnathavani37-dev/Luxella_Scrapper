@@ -7,3 +7,4 @@ Format: date, decision, why, alternatives considered.
 - 2026-10: Access via SSH key + tmux session. Why: no repeated passwords, sessions survive disconnects.
 - 2026-10: New cron schedules ship disabled until tested at small batch size. Why: avoid unreviewed bulk writes to the live store.
 - Default agent framework: Claude Agent SDK reusing MCP tools. Why: tools already exist, no rewrite.
+- 2026-10: Ruff (lint only, rules E4/E7/E9/F/B) + pre-commit (ruff check --fix on staged files, then the offline self-check) added. Why: catch real bugs before commit without a 38-file reformat diff. Alternatives: flake8/pylint (slower), ruff format now (deferred - widen one rule family per PR).

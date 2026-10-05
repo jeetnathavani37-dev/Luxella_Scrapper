@@ -1,0 +1,17 @@
+# Install once per clone: pre-commit install   (uv tool install pre-commit)
+# Needs the repo venv: python3 -m venv .venv && .venv/bin/pip install -r requirements.txt (the offline-test hook runs .venv/bin/python).
+# Runs on staged files only. Skip in an emergency: git commit --no-verify (and say why in the PR).
+repos:
+  - repo: https://github.com/astral-sh/ruff-pre-commit
+    rev: v0.16.10
+    hooks:
+      - id: ruff-check
+        args: [--fix]
+  - repo: local
+    hooks:
+      - id: luxella-offline-test
+        name: test_luxella_mcp.py (offline self-check)
+        entry: .venv/bin/python test_luxella_mcp.py
+        language: system
+        pass_filenames: false
+        types: [python]

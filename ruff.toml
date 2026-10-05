@@ -1,0 +1,11 @@
+# Ruff (lint only - no formatter yet, to avoid a 38-file reformat diff). Runs via pre-commit on staged files.
+# Rules: pyflakes + core pycodestyle errors + bugbear = real bugs, not style. Widen one family at a time, by PR.
+line-length = 120
+target-version = "py311"
+
+[lint]
+select = ["E4", "E7", "E9", "F", "B"]
+
+[lint.per-file-ignores]
+# Self-check script: sets env vars before importing luxella_mcp, compact asserts
+"test_luxella_mcp.py" = ["E402", "E702"]
