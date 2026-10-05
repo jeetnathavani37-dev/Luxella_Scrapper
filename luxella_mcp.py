@@ -98,6 +98,12 @@ def price_stock_changes(p):
         changes.append(f"compare_at {last_mrp} -> {mrp}")
     if last_stock is None or stock != last_stock:
         changes.append(f"in_stock {last_stock} -> {stock}")
+    # per-size (2026-10-05): sirf jinka signature pehle se hai - null wale repair_variant_stock.py ke hain
+    stored = p.get("last_synced_variant_stock")
+    if stored is not None:
+        sig = shopify_sync.stock_signature(p)
+        if sig is not None and sig != stored:
+            changes.append("sizes changed")
     return changes
 
 

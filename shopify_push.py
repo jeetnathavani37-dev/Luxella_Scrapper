@@ -84,7 +84,7 @@ def get_shopify_base_url():
 def fetch_pending_products(sb, limit):
     resp = (
         sb.table("products")
-        .select("id,sku,name,brand,category,currency,selling_price_inr,compare_at_price_inr,"
+        .select("id,sku,name,brand,category,currency,price,selling_price_inr,compare_at_price_inr,"
                  "image_url,image_urls,description,variants,in_stock,site")
         .eq("pushed_to_shopify", False)
         .is_("is_duplicate", "null")
@@ -268,7 +268,7 @@ def set_inventory(access_token, location_id, inventory_item_id, quantity):
     resp.raise_for_status()
 
 
-def mark_pushed(sb, product_id, shopify_product, in_stock, compare_at_price_inr, fingerprint):
+def mark_pushed(sb, product_id, shopify_product, in_stock, compare_at_price_inr, fingerprint, variant_sig=None):
     variant = shopify_product["variants"][0]
     sb.table("products").update({
         "pushed_to_shopify": True,
@@ -282,6 +282,8 @@ def mark_pushed(sb, product_id, shopify_product, in_stock, compare_at_price_inr,
         "shopify_pushed_at": datetime.now(timezone.utc).isoformat(),
         "shopify_synced_at": datetime.now(timezone.utc).isoformat(),
         "product_fingerprint": fingerprint,
+        # per-size stock push ne abhi sahi set kiya - signature se agla sync sirf badlaav pe chalega
+        "last_synced_variant_stock": variant_sig,
     }).eq("id", product_id).execute()
 
 
@@ -354,7 +356,9 @@ def run():
                 overall_in_stock = in_stock
                 compare_at_for_tracking = p.get("compare_at_price_inr")
 
-            mark_pushed(sb, p["id"], shopify_product, overall_in_stock, compare_at_for_tracking, fingerprint)
+            from shopify_sync import stock_signature
+            mark_pushed(sb, p["id"], shopify_product, overall_in_stock, compare_at_for_tracking, fingerprint,
+                        stock_signature(p))
             summary["pushed"] += 1
             if this_price is not None and (fingerprint not in existing_fp_prices or this_price < existing_fp_prices[fingerprint]):
                 existing_fp_prices[fingerprint] = this_price
