@@ -234,4 +234,136 @@ ss.set_size_quantities("t", [("i6", 10, 0)], "ref")
 ss.set_size_quantities("t", [("i6", 10, 0)], "ref")
 assert len(_keys) == 2 and _keys[0] != _keys[1], _keys
 
+# shopify_scraper.scrape_shopify_catalog: complete sirf jab khaali page pe pagination khatam ho
+import requests as _rq
+import shopify_scraper as sc
+_cfg = {"domain": "https://x.com", "name": "x", "currency": "USD", "category": "bags"}
+def _prod(h, title="Bag", price="10.00"):
+    return {"handle": h, "title": title, "variants": [{"price": price, "available": True, "sku": h}], "images": []}
+class _Resp:
+    def __init__(self, code, products=None, bad_json=False): self.status_code, self._p, self._bad = code, products, bad_json
+    def json(self):
+        if self._bad:
+            raise ValueError("bad json")
+        return {"products": self._p}
+def _getter(pages):
+    def get(url, timeout=None, headers=None):
+        r = pages[int(url.rsplit("page=", 1)[1]) - 1]
+        if isinstance(r, Exception):
+            raise r
+        return r
+    return get
+r = sc.scrape_shopify_catalog(_cfg, get=_getter([_Resp(200, [_prod("a"), _prod("gc", title="Gift Card")]),
+                                                 _Resp(200, [_prod("b")]), _Resp(200, [])]))
+assert r["complete"] and r["reason"] == "ok", r["reason"]
+assert {p["product_url"] for p in r["products"]} == {"https://x.com/products/a", "https://x.com/products/b"}
+assert "https://x.com/products/gc" in r["seen_urls"]  # gift card skip hua par "seen" hai - delisted nahi
+r = sc.scrape_shopify_catalog(_cfg, get=_getter([_Resp(200, [_prod("a")]), _Resp(429)]))
+assert not r["complete"] and r["reason"] == "status 429" and len(r["products"]) == 1, r
+r = sc.scrape_shopify_catalog(_cfg, get=_getter([_Resp(200, [_prod("a")]), _rq.ConnectionError("down")]))
+assert not r["complete"] and r["reason"] == "error" and len(r["products"]) == 1, r
+r = sc.scrape_shopify_catalog(_cfg, get=_getter([_Resp(200, [_prod("a")]), _Resp(200, bad_json=True)]))
+assert not r["complete"] and r["reason"] == "error", r
+r = sc.scrape_shopify_catalog(_cfg, get=_getter([_Resp(200, [_prod(f"p{i}")]) for i in range(sc.MAX_PAGES)]))
+assert not r["complete"] and r["reason"] == "cap" and len(r["products"]) == sc.MAX_PAGES, r
+_orig = sc.scrape_shopify_catalog
+sc.scrape_shopify_catalog = lambda cfg: {"products": [1, 2], "seen_urls": set(), "complete": True, "reason": "ok"}
+assert sc.scrape_shopify(_cfg) == [1, 2]  # purana contract: sirf products list
+sc.scrape_shopify_catalog = _orig
+
+# delisted.plan_delisted: sirf unseen in-stock rows, guards pe kuch nahi
+import delisted as dl
+_T0 = "2026-10-05T10:00:00+00:00"
+def _row(i, url=True, in_stock=True, scraped="2026-10-04T10:00:00+00:00"):
+    return {"id": i, "product_url": f"https://x.com/products/p{i}" if url else None, "in_stock": in_stock, "scraped_at": scraped}
+_rows = [_row(i) for i in range(10)] + [_row(10, in_stock=False), _row(11, url=False),
+                                        _row(12, scraped="2026-10-05T10:05:00+00:00")]
+_seen = {f"https://x.com/products/p{i}" for i in range(8)}
+m, why = dl.plan_delisted(_rows, _seen, _T0)
+assert why == "ok" and sorted(r["id"] for r in m) == [8, 9], (why, m)  # 10 sold out, 11 bina URL, 12 isi run ka
+m, why = dl.plan_delisted(_rows, {f"https://x.com/products/p{i}" for i in range(4)}, _T0)  # 4 seen < 50% of 11
+assert m == [] and why.startswith("seen"), why
+_seen2 = (_seen - {f"https://x.com/products/p{i}" for i in range(4)}) | {f"https://x.com/new{i}" for i in range(5)}
+m, why = dl.plan_delisted(_rows, _seen2, _T0)
+assert m == [] and why.startswith("mark"), why  # 6 of 11 = 55% > 30%
+assert dl.plan_delisted([_row(1, in_stock=False)], set(), _T0) == ([], "no in-stock rows")
+assert dl.plan_delisted(_rows, _seen, "2026-10-05T10:00:00Z")[1] == "ok"  # Z suffix bhi chale
+
+# delisted.mark_unseen_sold_out: dry = koi write nahi; "1" = sirf planned rows, saare sizes false
+class _DQ:
+    def __init__(self, db, table): self.db, self.table, self.filters, self.op, self.payload = db, table, [], None, None
+    def select(self, *_a): return self
+    def eq(self, c, v): self.filters.append((c, v)); return self
+    def gt(self, *_a): return self
+    def order(self, *_a): return self
+    def limit(self, *_a): return self
+    def update(self, d): self.op, self.payload = "update", d; return self
+    def insert(self, rows): self.op, self.payload = "insert", rows; return self
+    def execute(self):
+        if self.op:
+            self.db.calls.append((self.table, self.op, self.payload, self.filters))
+            rid = dict(self.filters).get("id")
+            hit = self.op == "update" and rid not in self.db.relisted
+            return type("R", (), {"data": [{"id": rid}] if hit else []})()
+        return type("R", (), {"data": [dict(r) for r in self.db.rows]})()
+class _DB:
+    def __init__(self, rows, relisted=()): self.rows, self.calls, self.relisted = rows, [], set(relisted)
+    def table(self, t): return _DQ(self, t)
+_vrows = [{**r, "site": "x", "sku": f"s{r['id']}", "name": f"N{r['id']}",
+           "variants": [{"size": "S", "in_stock": True, "price": 10}, {"size": "M", "in_stock": True, "price": 10}]}
+          for r in _rows]
+_logs = []
+res = dl.mark_unseen_sold_out(_DB(_vrows), "x", _seen, _T0, log=_logs.append)
+assert res["planned"] == 2 and res["marked"] == 0 and res["reason"] == "ok", res
+_bkp = tempfile.mktemp(suffix=".json")
+_db = _DB(_vrows)  # mode "1" bina backup path -> kuch nahi likhta (safe-writes)
+res = dl.mark_unseen_sold_out(_db, "x", _seen, _T0, mode="1", log=_logs.append)
+assert res["marked"] == 0 and res["reason"] == "no backup path" and _db.calls == [], res
+_db = _DB(_vrows)
+res = dl.mark_unseen_sold_out(_db, "x", _seen, _T0, mode="1", backup_path=_bkp, log=_logs.append)
+assert sorted(r["id"] for r in _json.load(open(_bkp))) == [8, 9]  # backup pehle, planned rows ka
+_ups = [c for c in _db.calls if c[1] == "update"]
+assert res["marked"] == 2 and sorted(dict(c[3])["id"] for c in _ups) == [8, 9], (res, _ups)
+assert all(c[0] == "products" and ("in_stock", True) in c[3] for c in _ups)  # re-list race guard
+assert all(not v["in_stock"] for c in _ups for v in c[2]["variants"]) and all(c[2]["in_stock"] is False for c in _ups)
+assert all("price" not in c[2] and "selling_price_inr" not in c[2] for c in _ups)  # price nahi chhoota
+_ins = [c for c in _db.calls if c[1] == "insert"]
+assert len(_ins) == 1 and _ins[0][0] == "product_changes" and [x["change_type"] for x in _ins[0][2]] == ["delisted"] * 2
+_db = _DB(_vrows)  # guard fail -> mode "1" bhi kuch nahi likhta
+res = dl.mark_unseen_sold_out(_db, "x", {"https://x.com/products/p0"}, _T0, mode="1", backup_path=_bkp,
+                              log=_logs.append)
+assert res["marked"] == 0 and _db.calls == [], res
+_db = _DB(_vrows)  # deadline beet chuki -> koi update nahi, phir bhi crash nahi
+res = dl.mark_unseen_sold_out(_db, "x", _seen, _T0, mode="1", deadline=1, backup_path=_bkp, log=_logs.append)
+assert res["marked"] == 0 and _db.calls == [], res
+_db = _DB(_vrows, relisted={9})  # row 9 beech mein dobara listed -> update 0 rows -> marked/log mein nahi
+res = dl.mark_unseen_sold_out(_db, "x", _seen, _T0, mode="1", backup_path=_bkp, log=_logs.append)
+_ins = [c for c in _db.calls if c[1] == "insert"]
+assert res["marked"] == 1 and [x["product_url"] for x in _ins[0][2]] == ["https://x.com/products/p8"], (res, _ins)
+# naive scraped_at (timestamp bina tz) bhi chale, crash nahi
+_nv = [_row(i, scraped="2026-10-04T10:00:00") for i in range(4)]
+m, why = dl.plan_delisted(_nv, {f"https://x.com/products/p{i}" for i in range(1, 4)}, _T0)
+assert why == "ok" and [r["id"] for r in m] == [0], (why, m)
+
+# MARK_DELISTED mode + should_mark (main.run ka gate)
+assert [dl.mark_mode(v) for v in (None, "", "dry", "1", "0", "off", "yes")] == ["dry", "dry", "dry", "1", "off", "off", "dry"]
+_shop = {"platform": "shopify", "name": "x"}
+_ok = {"complete": True}
+assert dl.should_mark(_shop, _ok, 0, deadline=100, mode="dry", now=50)
+assert not dl.should_mark(_shop, {"complete": False}, 0, 100, "1", now=50)           # adhoora scrape
+assert not dl.should_mark({"name": "y", "use_firecrawl": True}, _ok, 0, 100, "1", now=50)  # firecrawl site
+assert not dl.should_mark(_shop, _ok, 3, 100, "1", now=50)                             # kuch save nahi hua
+assert not dl.should_mark(_shop, _ok, 0, 100, "1", now=150)                            # deadline
+assert not dl.should_mark(_shop, _ok, 0, 100, "off", now=50)
+assert not dl.should_mark(_shop, None, 0, 100, "1", now=50)
+
+# main.py offline import (dummy env, koi network nahi) - wiring syntax/import sahi hai
+os.environ["SUPABASE_URL"], os.environ["SUPABASE_SERVICE_KEY"] = "http://localhost:1", "a.b.c"
+import contextlib
+import io as _io
+with contextlib.redirect_stdout(_io.StringIO()):
+    import main as _main
+assert _main.delisted is dl and hasattr(_main, "scrape_shopify_catalog")
+os.environ["SUPABASE_URL"] = os.environ["SUPABASE_SERVICE_KEY"] = ""
+
 print("ok")
