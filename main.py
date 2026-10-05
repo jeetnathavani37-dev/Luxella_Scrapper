@@ -43,16 +43,18 @@ import os
 import re
 import time
 from collections import Counter, defaultdict
+from datetime import datetime, timezone
 from patchright.sync_api import sync_playwright
 from supabase import create_client
 
 from sites import SITES
 from extract import scrape_site
-from shopify_scraper import scrape_shopify
+from shopify_scraper import scrape_shopify_catalog
 from scraperapi_scraper import scrape_site_scraperapi
 from scrapegraph_scraper import scrape_site_scrapegraph
 from firecrawl_scraper import scrape_site_firecrawl
-from db import save_product, save_products
+from db import save_product, save_products, supabase as db_client
+import delisted
 
 # Firecrawl sites jinse abhi tak koi data nahi aaya (2026-09-28 tak).
 FIRECRAWL_PAUSED = {
@@ -177,8 +179,10 @@ def get_staleness_order(sites):
 
 
 def run():
-    summary = {"new": 0, "changed": 0, "unchanged": 0, "errors": 0}
+    summary = {"new": 0, "changed": 0, "unchanged": 0, "errors": 0, "would_delist": 0, "delisted": 0}
     started = time.time()
+    run_started_at = datetime.now(timezone.utc).isoformat()
+    mark_mode = delisted.mark_mode(os.environ.get("MARK_DELISTED"))
     deadline = started + float(os.environ.get("MAX_RUN_MINUTES", "45")) * 60
     skipped_sites = []
 
@@ -202,9 +206,14 @@ def run():
                 continue
             print(f"\n=== Scraping: {config['name']} ===")
             try:
+                scrape = None
                 if config.get("platform") == "shopify":
-                    products = scrape_shopify(config)
-                    print(f"  {config['domain']} -> {len(products)} products")
+                    scrape = scrape_shopify_catalog(config)
+                    products = scrape["products"]
+                    print(f"  {config['domain']} -> {len(products)} products "
+                          f"(complete={scrape['complete']}, {scrape['reason']})")
+                    if scrape["reason"] == "error" and not products:
+                        summary["errors"] += 1
                 elif config.get("use_scraperapi"):
                     products = scrape_site_scraperapi(config)
                 elif config.get("use_firecrawl"):
@@ -217,6 +226,7 @@ def run():
                     products = scrape_site(page, config)
                     browser.close()
 
+                not_saved = 0
                 by_site = defaultdict(list)
                 for product in products:
                     by_site[product.get("site") or config["name"]].append({**product, "site": product.get("site") or config["name"]})
@@ -237,9 +247,25 @@ def run():
                                 print(f"  [ERROR saving product] {e2}")
                     for k in ("new", "changed", "unchanged", "errors"):
                         summary[k] += res.get(k, 0)
+                    not_saved += res.get("not_saved_deadline", 0)
                     details = {k: v for k, v in res.items() if k not in ("new", "changed", "unchanged") and v}
                     print(f"  saved in {time.time() - t0:.0f}s: new={res['new']} changed={res['changed']} "
                           f"unchanged={res['unchanged']} {details or ''}")
+
+                # brand ne site se hataye products -> sold out (spec 2026-10-05-mark-delisted-sold-out)
+                if delisted.should_mark(config, scrape, not_saved, deadline, mark_mode):
+                    backup = None
+                    if mark_mode == "1":
+                        backup_dir = os.environ.get("DELISTED_BACKUP_DIR") or "delisted_backups"
+                        os.makedirs(backup_dir, exist_ok=True)
+                        backup = os.path.join(backup_dir, f"delisted_{config['name']}_{run_started_at[:19]}.json")
+                    out = delisted.mark_unseen_sold_out(db_client, config["name"], scrape["seen_urls"], run_started_at,
+                                                        mode=mark_mode, deadline=deadline, backup_path=backup)
+                    summary["would_delist"] += out["planned"]
+                    summary["delisted"] += out["marked"]
+                elif scrape is not None:
+                    print(f"  [delisted] {config['name']}: skipped (complete={scrape['complete']}, "
+                          f"not_saved={not_saved}, mode={mark_mode})")
 
             except Exception as e:
                 summary["errors"] += 1
