@@ -1,0 +1,60 @@
+name: Claude Code agent
+
+# "@claude" in an issue / comment / PR review -> Claude Code writes code + tests and opens a PR.
+# Spec: docs/specs/2026-10-06-claude-github-agent.md. Merge is always the founder's.
+on:
+  issue_comment:
+    types: [created]
+  pull_request_review_comment:
+    types: [created]
+  issues:
+    types: [opened, assigned]
+  pull_request_review:
+    types: [submitted]
+
+permissions: {}   # sirf job-level permissions
+
+concurrency:
+  group: claude-${{ github.event.issue.number || github.event.pull_request.number }}
+  cancel-in-progress: false
+
+jobs:
+  claude:
+    # Public repo: sirf repo owner trigger kar sakta hai (action khud bhi write-access check karta hai).
+    if: |
+      github.actor == github.repository_owner && (
+        (github.event_name == 'issue_comment' && contains(github.event.comment.body, '@claude')) ||
+        (github.event_name == 'pull_request_review_comment' && contains(github.event.comment.body, '@claude')) ||
+        (github.event_name == 'pull_request_review' && contains(github.event.review.body, '@claude')) ||
+        (github.event_name == 'issues' && (contains(github.event.issue.body, '@claude') || contains(github.event.issue.title, '@claude')))
+      )
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    permissions:
+      contents: write
+      pull-requests: write
+      issues: write
+      id-token: write
+      actions: read   # PR pe CI results padhne ke liye
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: pip
+          cache-dependency-path: requirements*.txt
+
+      - name: Install (taaki agent tests/ruff chala sake)
+        run: pip install -r requirements-dev.txt
+
+      # Sirf CLAUDE_CODE_OAUTH_TOKEN - koi Supabase/Shopify/Firecrawl secret is job mein nahi.
+      - uses: anthropics/claude-code-action@v1
+        with:
+          claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+          claude_args: |
+            --max-turns 30
+            --allowedTools "Bash(python test_luxella_mcp.py),Bash(ruff check:*),Bash(git status),Bash(git diff:*),Bash(git log:*)"
+            --append-system-prompt "Luxella repo rules: follow CLAUDE.md. Work on a branch and open a PR - never push to main, never merge. Run python test_luxella_mcp.py and ruff check . before opening the PR and paste the result in the PR. New code that writes to Shopify/Supabase must be dry-run by default with an explicit confirm. Do not edit .github/ unless the task asks. No bidding logic in luxella_mcp.py. Reply to the founder in short Hinglish."
