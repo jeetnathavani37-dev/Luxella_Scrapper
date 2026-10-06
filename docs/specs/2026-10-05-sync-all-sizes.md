@@ -105,6 +105,18 @@ scraped but never synced after the push.
     - Fix: let `split_fresh` accept a stale row when **all** its sizes are sold out. Every target is then 0, and
       a 0 can never sell a missing item. Or have delisted-marking send the row through `sync_sizes`.
     - This doesn't affect the 18 dead sites, whose sizes were zeroed per inventory item on 2026-10-05.
+- **Products listed on Shopify without sizes (added 2026-10-06).** The first real dry-run (19,753 fresh products)
+  hit the 2% unmatched abort at 2.58%. 3,346 of the 3,452 unmatched "sizes" were Shopify products with a **single
+  "Default Title" variant** while the source has 5-10 sizes (aloyoga 2,856, karllagerfeld 317, frye, jwpei, staud…).
+  It wasn't a label mismatch. Writing a signature for them would have moved them to the per-size sync path, which
+  skips them forever (1 of 1 unmatched), so their stock would **never update again**. Mitigation:
+  - `plan()` skips any product whose Shopify listing has exactly one variant. There's no item, so no stock write
+    and no signature; they stay on the product-level path, unchanged from today.
+  - These are counted as `single_variant_on_shopify`.
+  - Checked: none of the 679 products that already have a signature is single-variant, so `shopify_sync` needs no change.
+  - Offline re-plan on the same data: unmatched 106 (0.08%), no abort. The changes are identical to the dry-run
+    (4,371 products, 5,941 sizes to 0, 3,342 to 10).
+  - Follow-up (separate spec): re-list those ~3.3k products with real size variants. Customers can't pick a size today.
 
 ## Rollout
 1. **Add the schema column first (with approval).** If the code is merged before the column exists:

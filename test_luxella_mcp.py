@@ -210,6 +210,13 @@ ss.set_size_quantities = _stale
 _sigs.clear()
 assert rv.apply(_SB2(), "t", items, limit=0, backup_path=_bk) == (0, [11]) and len(_sigs) == 1  # sirf P2
 assert open(_bk).read() == ""
+# single-variant Shopify listing (2026-10-06): "Default Title" product -> plan mein item nahi (na write, na signature)
+_shop["P3"] = [{"inventory_item_id": "k1", "size": "Default Title", "available": 10}]
+_p3 = {**_p1, "id": 14, "shopify_product_id": "P3"}
+items3, totals3 = rv.plan("t", [_p1, _p3])
+assert [it["row"]["id"] for it in items3] == [11], items3          # P3 ka koi item nahi -> apply signature nahi likhega
+assert totals3["single_variant_on_shopify"] == 1 and totals3["unmatched_sizes"] == 0, totals3
+assert totals3["sizes_checked"] == len(sizes13), totals3            # unmatched share mein single-variant nahi gina
 # repair stale guard (2026-10-06): purane / bina scraped_at wale products ko repair chhoota nahi
 from datetime import datetime as _dt, timezone as _tz
 _now = _dt(2026, 10, 6, 12, 0, tzinfo=_tz.utc)
