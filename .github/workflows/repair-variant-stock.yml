@@ -1,27 +1,3 @@
-The one-time per-size repair (repair_variant_stock.py, PR #23) was about to run on all 22,697 multi-size products without a signature. A read-only count on 2026-10-06 showed:
-
-scrape age	products
-≤ 2 days	19,753
-3–7 days	291
-8–30 days	2,504
-30+ days	149
-The 2,912 stale rows are mostly products the brand has removed (jwpei 430, staud 423, beyondyoga 412, victoriabeckham 344, aloyoga 332…). Repairing them from that old data would set sold-out or removed sizes back to 10, so customers could buy items that don't exist. It's the same class of mistake as the 2026-10-05 sandal incident.
-
-What
-split_fresh(rows, max_age_days=3): rows whose scraped_at is older than the cutoff, or null, are stale. Naive timestamps are treated as UTC, the same as delisted._ts.
---max-age-days (default 3). Stale rows get no stock write and no signature. The dry-run prints the skipped count and top sites, and the report has skipped_stale.
-fetch_candidates now selects scraped_at.
-The spec gains a risk entry plus the reviewer's follow-up gap. Delisted multi-size rows keep an old scraped_at, so they stay on the first-variant path. Follow-up slice: accept stale rows whose sizes are all sold out, since every target is then 0.
---verify and --restore are unchanged.
-No production writes in this PR.
-
-Checks
- test_luxella_mcp.py prints ok. New cases: 1 day, exactly 3 days (inclusive), 5 days, a naive timestamp, None, a 7-day override, and fetch_candidates selecting scraped_at.
- ruff and the gitleaks pre-commit hooks pass.
- Reviewer agent: OK to merge. It confirmed stale rows can't reach plan()/apply() on --confirm, and offline probes of timezone formats passed.
-Workflow file (founder adds manually; the integration can't write .github/workflows)
-Create .github/workflows/repair-variant-stock.yml with the content below. Inputs pass through env, not straight into the shell, and permissions are contents: read.
-
 name: Repair Variant Stock (one-time)
 
 on:
