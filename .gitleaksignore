@@ -1,0 +1,23 @@
+# False positives: vendored akamai_bmp ships Akamai SDK *public* RSA keys (rsaKey = ...), not Luxella secrets.
+# Commit-scoped fingerprints (full-history scans: gitleaks git):
+ce6cc8cda908985d946487b1e18d76d4abdd9015:akamai_bmp/bm/2.1.2/bm.go:generic-api-key:19
+ce6cc8cda908985d946487b1e18d76d4abdd9015:akamai_bmp/bm/2.2.2/bm.go:generic-api-key:19
+ce6cc8cda908985d946487b1e18d76d4abdd9015:akamai_bmp/bm/2.2.3/bm.go:generic-api-key:19
+ce6cc8cda908985d946487b1e18d76d4abdd9015:akamai_bmp/bm/3.1.0/bm.go:generic-api-key:19
+ce6cc8cda908985d946487b1e18d76d4abdd9015:akamai_bmp/bm/3.2.3/bm.go:generic-api-key:19
+ce6cc8cda908985d946487b1e18d76d4abdd9015:akamai_bmp/bm/3.3.0/bm.go:generic-api-key:19
+ce6cc8cda908985d946487b1e18d76d4abdd9015:akamai_bmp/bm/3.3.1/bm.go:generic-api-key:18
+ce6cc8cda908985d946487b1e18d76d4abdd9015:akamai_bmp/bm/3.3.4/bm.go:generic-api-key:18
+ce6cc8cda908985d946487b1e18d76d4abdd9015:akamai_bmp/bm/3.3.9/bm339.go:generic-api-key:17
+ce6cc8cda908985d946487b1e18d76d4abdd9015:akamai_bmp/bm/4.0.2/bm402.go:generic-api-key:18
+# Path-scoped fingerprints (pre-commit --staged / gitleaks dir scans):
+akamai_bmp/bm/2.1.2/bm.go:generic-api-key:19
+akamai_bmp/bm/2.2.2/bm.go:generic-api-key:19
+akamai_bmp/bm/2.2.3/bm.go:generic-api-key:19
+akamai_bmp/bm/3.1.0/bm.go:generic-api-key:19
+akamai_bmp/bm/3.2.3/bm.go:generic-api-key:19
+akamai_bmp/bm/3.3.0/bm.go:generic-api-key:19
+akamai_bmp/bm/3.3.1/bm.go:generic-api-key:18
+akamai_bmp/bm/3.3.4/bm.go:generic-api-key:18
+akamai_bmp/bm/3.3.9/bm339.go:generic-api-key:17
+akamai_bmp/bm/4.0.2/bm402.go:generic-api-key:18
