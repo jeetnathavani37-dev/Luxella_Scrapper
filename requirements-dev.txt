@@ -1,0 +1,7 @@
+# CI / local checks: production deps + what the offline test and linters need.
+# (luxella_mcp.py needs mcp + python-dotenv; they are not used by the scrapers/workflows.)
+-r requirements.txt
+mcp==2.3.0
+python-dotenv==1.2.4
+ruff==0.16.10
+pip-audit==2.10.1
