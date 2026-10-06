@@ -1,0 +1,83 @@
+name: Claude Code agent
+
+# "@claude" in an issue / comment / PR review -> Claude Code writes code + tests, pushes a claude/* branch
+# and replies with a "create PR" link. Spec: docs/specs/2026-10-06-claude-github-agent.md.
+# Merge is always the founder's.
+on:
+  issue_comment:
+    types: [created]
+  pull_request_review_comment:
+    types: [created]
+  issues:
+    types: [opened]
+  pull_request_review:
+    types: [submitted]
+
+permissions: {}   # sirf job-level permissions
+
+jobs:
+  claude:
+    # Public repo: sirf repo owner trigger kar sakta hai (action khud bhi write-access + human check karta hai).
+    # PR review events: sirf isi repo ke PR (fork PR ka code kabhi nahi chalega).
+    if: |
+      github.actor == github.repository_owner && (
+        (github.event_name == 'issue_comment' && contains(github.event.comment.body, '@claude')) ||
+        (github.event_name == 'pull_request_review_comment' && contains(github.event.comment.body, '@claude')
+          && github.event.pull_request.head.repo.full_name == github.repository) ||
+        (github.event_name == 'pull_request_review' && contains(github.event.review.body, '@claude')
+          && github.event.pull_request.head.repo.full_name == github.repository) ||
+        (github.event_name == 'issues' && (contains(github.event.issue.body, '@claude') || contains(github.event.issue.title, '@claude')))
+      )
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    # job-level (workflow-level nahi): skip hue runs is group mein nahi aate, founder ka queued run cancel nahi hota
+    concurrency:
+      group: claude-${{ github.event.issue.number || github.event.pull_request.number }}
+      cancel-in-progress: false
+    permissions:
+      contents: write
+      pull-requests: write
+      issues: write
+      id-token: write
+      actions: read
+    steps:
+      # Fork PR pe @claude (issue_comment PR pe bhi aata hai) -> fail. Warna action fork ka code checkout
+      # karke chalata, tokens ke saath (reviewer finding #1).
+      - name: Block fork PRs
+        if: github.event.issue.pull_request || github.event.pull_request
+        env:
+          GH_TOKEN: ${{ github.token }}
+          N: ${{ github.event.issue.number || github.event.pull_request.number }}
+        run: |
+          cross=$(gh pr view "$N" --repo "$GITHUB_REPOSITORY" --json isCrossRepository -q .isCrossRepository)
+          if [ "$cross" != "false" ]; then echo "Fork PR - Claude agent yahan nahi chalega."; exit 1; fi
+
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
+          persist-credentials: false   # action apne credentials khud set karta hai
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: pip
+          cache-dependency-path: requirements*.txt
+
+      - name: Install (taaki agent tests/ruff chala sake)
+        run: pip install -r requirements-dev.txt
+
+      # Sirf CLAUDE_CODE_OAUTH_TOKEN - koi Supabase/Shopify/Firecrawl secret is job mein nahi.
+      - uses: anthropics/claude-code-action@v1
+        with:
+          claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+          # App token ko sirf ye scope milega (contents/PR/issues + actions:read) - WORKFLOWS permission NAHI,
+          # to agent .github/workflows push nahi kar sakta (reviewer finding #2). CI results bhi padh sakega.
+          additional_permissions: |
+            actions: read
+          # Context mein sirf founder ke comments (stranger ke comments se prompt injection nahi)
+          include_comments_by_actor: ${{ github.repository_owner }}
+          claude_args: |
+            --max-turns 30
+            --allowedTools "Bash(python test_luxella_mcp.py),Bash(ruff check:*),Bash(git status),Bash(git diff:*),Bash(git log:*)"
+            --disallowedTools "Edit(.github/**),Write(.github/**),MultiEdit(.github/**)"
+            --append-system-prompt "Luxella repo rules: follow CLAUDE.md. Work only on your claude/* branch - never push to main, never merge. Run python test_luxella_mcp.py and ruff check . before pushing and paste both results in your reply with the create-PR link. New code that writes to Shopify/Supabase must be dry-run by default with an explicit confirm. Never edit .github/. No bidding logic in luxella_mcp.py. Reply to the founder in short Hinglish."
