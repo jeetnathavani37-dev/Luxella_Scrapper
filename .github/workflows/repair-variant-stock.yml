@@ -1,0 +1,96 @@
+The one-time per-size repair (repair_variant_stock.py, PR #23) was about to run on all 22,697 multi-size products without a signature. A read-only count on 2026-10-06 showed:
+
+scrape age	products
+≤ 2 days	19,753
+3–7 days	291
+8–30 days	2,504
+30+ days	149
+The 2,912 stale rows are mostly products the brand has removed (jwpei 430, staud 423, beyondyoga 412, victoriabeckham 344, aloyoga 332…). Repairing them from that old data would set sold-out or removed sizes back to 10, so customers could buy items that don't exist. It's the same class of mistake as the 2026-10-05 sandal incident.
+
+What
+split_fresh(rows, max_age_days=3): rows whose scraped_at is older than the cutoff, or null, are stale. Naive timestamps are treated as UTC, the same as delisted._ts.
+--max-age-days (default 3). Stale rows get no stock write and no signature. The dry-run prints the skipped count and top sites, and the report has skipped_stale.
+fetch_candidates now selects scraped_at.
+The spec gains a risk entry plus the reviewer's follow-up gap. Delisted multi-size rows keep an old scraped_at, so they stay on the first-variant path. Follow-up slice: accept stale rows whose sizes are all sold out, since every target is then 0.
+--verify and --restore are unchanged.
+No production writes in this PR.
+
+Checks
+ test_luxella_mcp.py prints ok. New cases: 1 day, exactly 3 days (inclusive), 5 days, a naive timestamp, None, a 7-day override, and fetch_candidates selecting scraped_at.
+ ruff and the gitleaks pre-commit hooks pass.
+ Reviewer agent: OK to merge. It confirmed stale rows can't reach plan()/apply() on --confirm, and offline probes of timezone formats passed.
+Workflow file (founder adds manually; the integration can't write .github/workflows)
+Create .github/workflows/repair-variant-stock.yml with the content below. Inputs pass through env, not straight into the shell, and permissions are contents: read.
+
+name: Repair Variant Stock (one-time)
+
+on:
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: '1 = sirf dikhao (default), 0 = asli likho'
+        required: false
+        default: '1'
+      limit:
+        description: 'Sirf itne badalne wale products (0 = sab). Pehle 5, phir 500.'
+        required: false
+        default: '5'
+      verify:
+        description: 'Read-only jaanch: N random products (0 = off). Ye set ho to repair nahi chalta.'
+        required: false
+        default: '0'
+      max_age_days:
+        description: 'Isse purane scrape wale products ko bilkul mat chhoo (default 3 din)'
+        required: false
+        default: '3'
+
+jobs:
+  repair:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    timeout-minutes: 360
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install dependencies
+        run: pip install requests supabase
+
+      - name: Repair per-size stock
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}
+          SHOPIFY_STORE_DOMAIN: ${{ secrets.SHOPIFY_STORE_DOMAIN }}
+          SHOPIFY_CLIENT_ID: ${{ secrets.SHOPIFY_CLIENT_ID }}
+          SHOPIFY_CLIENT_SECRET: ${{ secrets.SHOPIFY_CLIENT_SECRET }}
+          # inputs env se (shell mein seedha ${{ }} nahi - GitHub ka safe tareeka)
+          IN_DRY_RUN: ${{ github.event.inputs.dry_run }}
+          IN_LIMIT: ${{ github.event.inputs.limit }}
+          IN_VERIFY: ${{ github.event.inputs.verify }}
+          IN_MAX_AGE: ${{ github.event.inputs.max_age_days }}
+        run: |
+          if [ "$IN_VERIFY" != "0" ]; then
+            python repair_variant_stock.py --verify "$IN_VERIFY"
+          elif [ "$IN_DRY_RUN" = "0" ]; then
+            python repair_variant_stock.py --confirm --limit "$IN_LIMIT" --max-age-days "$IN_MAX_AGE"
+          else
+            python repair_variant_stock.py --max-age-days "$IN_MAX_AGE"
+          fi
+
+      - name: Upload backup and report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: variant-stock-${{ github.run_id }}
+          path: |
+            variant_stock_before-*.jsonl
+            variant_stock_plan.jsonl
+            variant_stock_report.json
+          if-no-files-found: ignore
+          retention-days: 90
