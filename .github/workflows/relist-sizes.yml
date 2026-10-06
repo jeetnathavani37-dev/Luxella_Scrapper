@@ -1,0 +1,89 @@
+name: Relist size-less products (one-time)
+
+# Bina-size Shopify listings me asli Size variants. Spec: docs/specs/2026-10-06-relist-sizeless-products.md
+on:
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: '1 = sirf dikhao (default), 0 = asli likho'
+        required: false
+        default: '1'
+      limit:
+        description: 'Sirf itne products (0 = sab). Pehle 1, phir 5, 50.'
+        required: false
+        default: '1'
+      only_id:
+        description: 'Sirf ye Supabase product id (jaise 3860 = ALO Runner). Khaali = sab candidates.'
+        required: false
+        default: ''
+      max_age_days:
+        description: 'Isse purane scrape wale products ko mat chhoo (default 3 din)'
+        required: false
+        default: '3'
+      restore_run_id:
+        description: 'Undo: jis run ko wapas karna hai uska run id (uska backup artifact khud download hoga). Khaali = off.'
+        required: false
+        default: ''
+
+permissions:
+  contents: read
+  actions: read   # undo ke liye pichle run ka backup artifact download
+
+jobs:
+  relist:
+    runs-on: ubuntu-latest
+    timeout-minutes: 360
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install dependencies
+        run: pip install requests supabase
+
+      - name: Download backup for undo
+        if: github.event.inputs.restore_run_id != ''
+        uses: actions/download-artifact@v4
+        with:
+          name: relist-sizes-${{ github.event.inputs.restore_run_id }}
+          run-id: ${{ github.event.inputs.restore_run_id }}
+          github-token: ${{ github.token }}
+          path: restore
+
+      - name: Relist sizes
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}
+          SHOPIFY_STORE_DOMAIN: ${{ secrets.SHOPIFY_STORE_DOMAIN }}
+          SHOPIFY_CLIENT_ID: ${{ secrets.SHOPIFY_CLIENT_ID }}
+          SHOPIFY_CLIENT_SECRET: ${{ secrets.SHOPIFY_CLIENT_SECRET }}
+          IN_DRY_RUN: ${{ github.event.inputs.dry_run }}
+          IN_LIMIT: ${{ github.event.inputs.limit }}
+          IN_ONLY_ID: ${{ github.event.inputs.only_id }}
+          IN_MAX_AGE: ${{ github.event.inputs.max_age_days }}
+          IN_RESTORE: ${{ github.event.inputs.restore_run_id }}
+        run: |
+          args=(--max-age-days "$IN_MAX_AGE")
+          [ -n "$IN_ONLY_ID" ] && args+=(--only-id "$IN_ONLY_ID")
+          if [ -n "$IN_RESTORE" ]; then
+            f=$(find restore -name "relist_before-*.jsonl" | head -1)
+            if [ "$IN_DRY_RUN" = "0" ]; then python relist_sizes.py --restore "$f" --confirm
+            else python relist_sizes.py --restore "$f"; fi
+          elif [ "$IN_DRY_RUN" = "0" ]; then
+            python relist_sizes.py --confirm --limit "$IN_LIMIT" "${args[@]}"
+          else
+            python relist_sizes.py "${args[@]}"
+          fi
+
+      - name: Upload backup and report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: relist-sizes-${{ github.run_id }}
+          path: |
+            relist_before-*.jsonl
+            relist_report.json
+          if-no-files-found: ignore
+          retention-days: 90

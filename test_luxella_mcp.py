@@ -291,6 +291,53 @@ sc.scrape_shopify_catalog = lambda cfg: {"products": [1, 2], "seen_urls": set(),
 assert sc.scrape_shopify(_cfg) == [1, 2]  # purana contract: sirf products list
 sc.scrape_shopify_catalog = _orig
 
+# relist_sizes (2026-10-06): bina-size listing me asli Size variants - targets, plan filter, write order
+import relist_sizes as rl
+_rr = {**partial, "id": 31, "site": "aloyoga", "name": "ALO Runner", "shopify_product_id": "R1"}  # 13 sizes, 6+7 sold out
+_t = rl.build_targets(_rr)
+assert [x["size"] for x in _t] == sizes13 and len(_t) == 13, _t
+assert {x["size"]: x["qty"] for x in _t}["6"] == 0 and {x["size"]: x["qty"] for x in _t}["5"] == 10
+assert all(x["sku"] == f"LX-31-{x['size']}" for x in _t) and all(float(x["price"]) > 0 for x in _t)  # sku fallback
+assert rl.build_targets({**_rr, "price": 0}) == []                                         # price 0 -> relist nahi
+assert rl.build_targets({**_rr, "variants": _rr["variants"][:1]}) == []                    # single size -> nahi
+_s1 = {"options": [{"id": "o1", "name": "Title"}], "variant_id": "gid://shopify/ProductVariant/9", "title": "Default Title",
+       "price": "25699.00", "compare_at": None, "sku": "OLD", "inventory_item_id": "77", "available": 0}
+rl.read_shopify = lambda tok, pids: {"R1": _s1, "R2": {**_s1, "title": "6"}}  # R2 = adhoora pichla run
+_items, _tot = rl.plan("t", [_rr, {**_rr, "id": 32, "shopify_product_id": "R2"}, {**_rr, "id": 33, "shopify_product_id": "R3"}])
+assert [it["row"]["id"] for it in _items] == [31], _items
+assert _tot["to_relist"] == 1 and _tot["skipped_not_default_title"] == 1 and _tot["not_single_variant_on_shopify"] == 1, _tot
+assert _tot["variants_to_create"] == 12 and _tot["sold_out_becomes_buyable"] == 1, _tot
+_ev = []
+def _fake_gql(tok, q, v):
+    k = q.split("{", 2)[1].split("(")[0].strip()
+    _ev.append(k)
+    if k == "productOptionsCreate":
+        return {k: {"product": {"options": [], "variants": {"nodes": [{"id": _s1["variant_id"], "title": "5"}]}}, "userErrors": []}}
+    return {k: {"userErrors": []}}
+rl.ss.shopify_graphql = _fake_gql
+rl.ss.set_size_quantities = lambda tok, ch, ref: _ev.append(("stock", ch))
+class _SB3:
+    def table(self, _):
+        class Q:
+            def update(q, d): _ev.append(("sig", d["last_synced_variant_stock"] is not None)); return q
+            def eq(q, *a): return q
+            def execute(q): return None
+        return Q()
+class _BK:
+    def write(self, x): _ev.append("backup")
+    def flush(self): pass
+rl.relist_one(_SB3(), "t", _items[0], _BK())
+assert _ev[0] == "backup" and _ev[1] == "productOptionsCreate" and _ev[-1] == ("sig", True), _ev     # backup pehle, signature aakhir
+assert ("stock", [("77", 0, 10)]) in _ev and "productVariantsBulkCreate" in _ev, _ev                  # size "5" 0 -> 10 CAS
+_ev.clear()
+_bad = {**_items[0], "shop": {**_s1, "variant_id": "gid://shopify/ProductVariant/OTHER"}}  # Shopify ne alag variant diya
+try:
+    rl.relist_one(_SB3(), "t", _bad, _BK())
+    raise AssertionError("expected RelistError")
+except rl.RelistError:
+    pass
+assert not any(isinstance(e, tuple) and e[0] == "sig" for e in _ev) and "productVariantsBulkCreate" not in _ev, _ev  # ruka, signature nahi
+
 # delisted.plan_delisted: sirf unseen in-stock rows, guards pe kuch nahi
 import delisted as dl
 _T0 = "2026-10-05T10:00:00+00:00"
