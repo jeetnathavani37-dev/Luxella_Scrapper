@@ -19,6 +19,10 @@ Kya karta hai (sirf last_synced_variant_stock IS NULL wale pushed multi-size pro
   - Purana scrape (scraped_at > --max-age-days, default 3, ya khaali) ko BILKUL nahi chhoota - na stock, na signature.
     Wo data galat ho sakta hai (2026-10-06: 2,912 products 3-30+ din purane, zyadatar brand site se hat chuke;
     dead sites ke sizes 0 kiye gaye the - repair unhe wapas 10 kar deta). Unhe delisted-marking sambhalega.
+  - Shopify pe sirf 1 variant ("Default Title", bina size ke list hua) -> per-size possible nahi: BILKUL nahi
+    chhoota, signature bhi nahi (warna sync usse hamesha skip karta aur stock kabhi update na hota).
+    Purane (product-level) raaste pe rehta hai. 2026-10-06 dry-run: 3,346 aise (aloyoga 2,856) - inka
+    unmatched 2.58% ka 97% tha. Inhe sahi sizes ke saath dobara list karna alag kaam hai.
 
 Usage (GitHub Actions: .github/workflows/repair-variant-stock.yml):
     python repair_variant_stock.py                     # dry run, sab
@@ -115,11 +119,14 @@ def plan(token, rows):
     by_pid = shopify_sizes_bulk(token, [r["shopify_product_id"] for r in rows])
     items, totals = [], {"products": len(rows), "missing_on_shopify": 0, "products_changing": 0,
                          "sizes_to_0": 0, "sizes_to_10": 0, "sizes_left_1_9": 0, "unmatched_sizes": 0,
-                         "sizes_checked": 0}
+                         "sizes_checked": 0, "single_variant_on_shopify": 0}
     for r in rows:
         shop = by_pid.get(r["shopify_product_id"])
         if shop is None:
             totals["missing_on_shopify"] += 1
+            continue
+        if len(shop) == 1:
+            totals["single_variant_on_shopify"] += 1  # bina size list hua - per-size nahi, signature nahi
             continue
         changes, skipped, unmatched = ss.size_targets(r, shop)
         totals["sizes_checked"] += len(shop)
