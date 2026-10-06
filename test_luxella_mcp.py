@@ -291,8 +291,10 @@ sc.scrape_shopify_catalog = lambda cfg: {"products": [1, 2], "seen_urls": set(),
 assert sc.scrape_shopify(_cfg) == [1, 2]  # purana contract: sirf products list
 sc.scrape_shopify_catalog = _orig
 
-# relist_sizes (2026-10-06): bina-size listing me asli Size variants - targets, plan filter, write order
+# relist_sizes (2026-10-06): bina-size listing me asli Size variants - targets, plan filter, write order,
+# rollback, restore checks, main() guards. Module globals jo badle wo aakhir mein wapas.
 import relist_sizes as rl
+_saved = (rl.ss.shopify_graphql, rl.ss.set_size_quantities, rl.read_shopify, rl.read_one)
 _rr = {**partial, "id": 31, "site": "aloyoga", "name": "ALO Runner", "shopify_product_id": "R1"}  # 13 sizes, 6+7 sold out
 _t = rl.build_targets(_rr)
 assert [x["size"] for x in _t] == sizes13 and len(_t) == 13, _t
@@ -300,6 +302,7 @@ assert {x["size"]: x["qty"] for x in _t}["6"] == 0 and {x["size"]: x["qty"] for 
 assert all(x["sku"] == f"LX-31-{x['size']}" for x in _t) and all(float(x["price"]) > 0 for x in _t)  # sku fallback
 assert rl.build_targets({**_rr, "price": 0}) == []                                         # price 0 -> relist nahi
 assert rl.build_targets({**_rr, "variants": _rr["variants"][:1]}) == []                    # single size -> nahi
+assert rl.build_targets({**_rr, "name": "ALO e-Gift Card"}) == []                          # gift card kabhi nahi
 _s1 = {"options": [{"id": "o1", "name": "Title"}], "variant_id": "gid://shopify/ProductVariant/9", "title": "Default Title",
        "price": "25699.00", "compare_at": None, "sku": "OLD", "inventory_item_id": "77", "available": 0}
 rl.read_shopify = lambda tok, pids: {"R1": _s1, "R2": {**_s1, "title": "6"}}  # R2 = adhoora pichla run
@@ -308,14 +311,19 @@ assert [it["row"]["id"] for it in _items] == [31], _items
 assert _tot["to_relist"] == 1 and _tot["skipped_not_default_title"] == 1 and _tot["not_single_variant_on_shopify"] == 1, _tot
 assert _tot["variants_to_create"] == 12 and _tot["sold_out_becomes_buyable"] == 1, _tot
 _ev = []
+_fail_on = set()
 def _fake_gql(tok, q, v):
     k = q.split("{", 2)[1].split("(")[0].strip()
     _ev.append(k)
+    if k in _fail_on:
+        return {k: {"userErrors": [{"message": "boom"}]}}
     if k == "productOptionsCreate":
-        return {k: {"product": {"options": [], "variants": {"nodes": [{"id": _s1["variant_id"], "title": "5"}]}}, "userErrors": []}}
+        return {k: {"product": {"options": [{"id": "oS", "name": "Size"}],
+                                "variants": {"nodes": [{"id": _s1["variant_id"], "title": "5"}]}}, "userErrors": []}}
     return {k: {"userErrors": []}}
 rl.ss.shopify_graphql = _fake_gql
 rl.ss.set_size_quantities = lambda tok, ch, ref: _ev.append(("stock", ch))
+rl.read_one = lambda tok, pid: dict(_s1)  # fresh re-read (plan purana ho sakta hai)
 class _SB3:
     def table(self, _):
         class Q:
@@ -329,14 +337,67 @@ class _BK:
 rl.relist_one(_SB3(), "t", _items[0], _BK())
 assert _ev[0] == "backup" and _ev[1] == "productOptionsCreate" and _ev[-1] == ("sig", True), _ev     # backup pehle, signature aakhir
 assert ("stock", [("77", 0, 10)]) in _ev and "productVariantsBulkCreate" in _ev, _ev                  # size "5" 0 -> 10 CAS
-_ev.clear()
-_bad = {**_items[0], "shop": {**_s1, "variant_id": "gid://shopify/ProductVariant/OTHER"}}  # Shopify ne alag variant diya
+# halat badli (ab Default Title nahi) -> Skip, koi write/backup nahi
+_ev.clear(); rl.read_one = lambda tok, pid: {**_s1, "title": "5"}
 try:
-    rl.relist_one(_SB3(), "t", _bad, _BK())
-    raise AssertionError("expected RelistError")
+    rl.relist_one(_SB3(), "t", _items[0], _BK()); raise AssertionError("expected Skip")
+except rl.Skip:
+    pass
+assert _ev == [], _ev
+rl.read_one = lambda tok, pid: dict(_s1)
+# Shopify ne alag pehla variant diya -> RelistError, koi variant create/signature nahi
+_ev.clear(); rl.read_one = lambda tok, pid: {**_s1, "variant_id": "gid://shopify/ProductVariant/OTHER"}
+try:
+    rl.relist_one(_SB3(), "t", _items[0], _BK()); raise AssertionError("expected RelistError")
 except rl.RelistError:
     pass
-assert not any(isinstance(e, tuple) and e[0] == "sig" for e in _ev) and "productVariantsBulkCreate" not in _ev, _ev  # ruka, signature nahi
+assert not any(isinstance(e, tuple) and e[0] == "sig" for e in _ev) and "productVariantsBulkCreate" not in _ev, _ev
+rl.read_one = lambda tok, pid: dict(_s1)
+# bulkCreate fail (option ban chuka) -> turant rollback (Size option delete + purana price/SKU), signature nahi
+_ev.clear(); _fail_on = {"productVariantsBulkCreate"}
+try:
+    rl.relist_one(_SB3(), "t", _items[0], _BK()); raise AssertionError("expected RelistError")
+except rl.RelistError as e:
+    assert "rolled back" in str(e), e
+assert "productOptionsDelete" in _ev and _ev.index("productOptionsDelete") > _ev.index("productVariantsBulkCreate"), _ev
+assert not any(isinstance(e, tuple) and e[0] == "sig" for e in _ev), _ev
+_fail_on = set()
+# restore: delete se PEHLE check; pehle se restored / pehla variant original nahi -> skip, koi delete nahi
+_rbk = tempfile.mktemp(suffix=".jsonl")
+with open(_rbk, "w") as _f:
+    _f.write(_json.dumps({"supabase_id": 31, "product_id": "R1", "before": _s1}) + "\n")
+    _f.write(_json.dumps({"supabase_id": 32, "product_id": "R2", "before": _s1}) + "\n")
+def _node(opts, first_id):
+    return {"id": "x", "options": [{"id": "oS", "name": n} for n in opts],
+            "variants": {"nodes": [{"id": first_id, "title": "5", "price": "1", "compareAtPrice": None,
+                                    "inventoryItem": {"id": "gid://shopify/InventoryItem/77", "sku": "s",
+                                                      "inventoryLevel": {"quantities": [{"quantity": 10}]}}}]}}
+def _restore_gql(nodes):
+    def g(tok, q, v):
+        k = q.split("{", 2)[1].split("(")[0].strip()
+        if k == "nodes":
+            return {"nodes": [nodes[v["ids"][0].rsplit("/", 1)[1]]]}
+        _ev.append(k)
+        return {k: {"userErrors": []}}
+    return g
+_ev.clear()
+rl.ss.shopify_graphql = _restore_gql({"R1": _node(["Title"], _s1["variant_id"]), "R2": _node(["Size"], "gid://shopify/ProductVariant/X")})
+_ok, _sk = rl.restore(_SB3(), "t", _rbk)
+assert _ok == 0 and [x[0] for x in _sk] == [31, 32] and "productOptionsDelete" not in _ev, (_ok, _sk, _ev)
+_ev.clear()
+rl.ss.shopify_graphql = _restore_gql({"R1": _node(["Size"], _s1["variant_id"]), "R2": _node(["Size"], _s1["variant_id"])})
+_ok, _sk = rl.restore(_SB3(), "t", _rbk, only_id=31)                                    # sirf ek product
+assert _ok == 1 and _ev.count("productOptionsDelete") == 1 and ("stock", [("77", 10, 0)]) in _ev, (_ok, _ev)
+# main() guards: --restore "" kabhi relist pe nahi giregi; --confirm bina limit/only-id/--all -> abort
+import sys as _sys
+for _argv in (["relist_sizes.py", "--restore", "", "--confirm"], ["relist_sizes.py", "--confirm"]):
+    _sys.argv = _argv
+    try:
+        rl.main(); raise AssertionError(f"expected SystemExit for {_argv}")
+    except SystemExit as e:
+        assert "ABORT" in str(e.code), e.code
+_sys.argv = ["test_luxella_mcp.py"]
+rl.ss.shopify_graphql, rl.ss.set_size_quantities, rl.read_shopify, rl.read_one = _saved
 
 # delisted.plan_delisted: sirf unseen in-stock rows, guards pe kuch nahi
 import delisted as dl

@@ -29,6 +29,11 @@ permissions:
   contents: read
   actions: read   # undo ke liye pichle run ka backup artifact download
 
+# do run ek saath kabhi nahi (double-click / limit=5 jab limit=1 chal raha ho)
+concurrency:
+  group: relist-sizes
+  cancel-in-progress: false
+
 jobs:
   relist:
     runs-on: ubuntu-latest
@@ -69,10 +74,13 @@ jobs:
           [ -n "$IN_ONLY_ID" ] && args+=(--only-id "$IN_ONLY_ID")
           if [ -n "$IN_RESTORE" ]; then
             f=$(find restore -name "relist_before-*.jsonl" | head -1)
-            if [ "$IN_DRY_RUN" = "0" ]; then python relist_sizes.py --restore "$f" --confirm
-            else python relist_sizes.py --restore "$f"; fi
+            [ -n "$f" ] || { echo "ABORT: us run ke artifact mein backup file nahi (dry-run tha?) - kuch nahi kiya"; exit 1; }
+            r=(--restore "$f"); [ -n "$IN_ONLY_ID" ] && r+=(--only-id "$IN_ONLY_ID")
+            if [ "$IN_DRY_RUN" = "0" ]; then python relist_sizes.py "${r[@]}" --confirm
+            else python relist_sizes.py "${r[@]}"; fi
           elif [ "$IN_DRY_RUN" = "0" ]; then
-            python relist_sizes.py --confirm --limit "$IN_LIMIT" "${args[@]}"
+            if [ "$IN_LIMIT" = "0" ]; then args+=(--all); else args+=(--limit "$IN_LIMIT"); fi
+            python relist_sizes.py --confirm "${args[@]}"
           else
             python relist_sizes.py "${args[@]}"
           fi

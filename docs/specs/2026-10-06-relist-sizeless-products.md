@@ -42,15 +42,30 @@ products are no longer shown sold out while most sizes are available.
    - updates Supabase: `last_synced_variant_stock` = `stock_signature(row)`, so `shopify_sync` keeps every size
      correct from then on. `shopify_variant_id` and `shopify_inventory_item_id` **stay the same**, because the
      old variant is now size 1;
-   - **skips** stale rows (`scraped_at` older than 3 days, the same rule as the repair) and products whose
-     source price is 0.
+   - **skips**:
+     - stale rows (`scraped_at` older than 3 days, the same rule as the repair);
+     - products whose source price is 0;
+     - **gift cards, GWP and fees**: the scraper's `NON_PRODUCT` filter. The reviewer found "ALO e-Gift Card" and
+       "ALO Physical Gift Card" would otherwise get 13 denominations up to ₹1,28,599 at stock 10.
+   - **Safety added after review (2026-10-06):**
+     - each product is **re-read just before writing**, because the plan may be hours old. The backup and CAS use
+       that fresh state; if it's no longer a single "Default Title", it's skipped and reported;
+     - a failure after the option is created triggers an **immediate rollback** (`productOptionsDelete` POSITION
+       plus the old price and SKU), then the run stops;
+     - `--confirm` needs `--limit N`, `--only-id` or an explicit `--all`;
+     - an empty or missing `--restore` file aborts. It never falls through to a relist;
+     - restore checks **before deleting** that the options are exactly `["Size"]` and the first variant is the
+       original; otherwise it skips. It supports `--only-id` and does nothing to an already-restored product;
+     - the workflow has `concurrency: relist-sizes` and aborts if the undo artifact has no backup.
 2. **Dry-run report:** counts per site, 20 samples (product, sizes, per-size target stock and price), and the
    number currently sold out that would become buyable.
 3. **Backup before every write:** per product, the Shopify product id, the old variant (id, price, compare-at,
    SKU, inventory item, available) and the Supabase columns being changed. Saved as a run artifact (90 days) and
    copied to `/root/backups/<date>/`.
-4. **Workflow `relist-sizes.yml`** (`workflow_dispatch`): inputs `dry_run` (default `1`), `limit` (default `1`),
-   `verify`. Production secrets are passed by name only. I can push it myself now.
+4. **Workflow `relist-sizes.yml`** (`workflow_dispatch`): inputs `dry_run` (default `1`), `limit` (default `1`;
+   `0` = all, passed as `--all`), `only_id`, `max_age_days`, `restore_run_id`. Production secrets are passed by name
+   only. Verification after the full run is done with a fresh Shopify bulk export plus `size_targets` (acceptance
+   check 4), not a workflow input.
 5. Offline tests in `test_luxella_mcp.py`:
    - the target builder (sizes, price per size, stock 10/0, price 0 → all 0);
    - the skip rules (stale, single size, price 0);
@@ -79,11 +94,11 @@ products are no longer shown sold out while most sizes are available.
    `[SIZES-SKIP]` for these products.
 
 ## Writes to production
-- **Shopify:** **3,346 products** (offline re-plan on real data, 2026-10-06; aloyoga 2,856, karllagerfeld 317,
-  jwpei 69…).
+- **Shopify:** **3,344 products** (offline re-plan on real data, 2026-10-06, after excluding the 2 gift cards;
+  aloyoga 2,854, karllagerfeld 317, jwpei 69…).
   - Per product: 1 option, N-1 new variants with stock set at creation, and 1 update to the existing variant,
     plus 1 CAS stock set if needed. No variant is deleted.
-  - In total: **15,371 new variants**; 13,441 sizes in stock; **962 products currently sold out become buyable**.
+  - In total: **15,360 new variants**; 13,428 sizes in stock; **962 products currently sold out become buyable**.
   - That's about 11k API calls through GitHub Actions with the existing Shopify app secrets.
 - **Supabase:** 1 column per product (`last_synced_variant_stock`).
 - **Backup:** described above, saved before each product's write.

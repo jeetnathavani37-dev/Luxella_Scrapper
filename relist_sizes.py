@@ -24,13 +24,15 @@ Usage (GitHub Actions: .github/workflows/relist-sizes.yml):
     python relist_sizes.py                          # dry run: counts + 20 samples, kuch nahi likhta
     python relist_sizes.py --confirm --limit 1      # pehla product
     python relist_sizes.py --confirm --only-id 3860 # ek specific Supabase product (jaise ALO Runner)
-    python relist_sizes.py --restore relist_before-<run>.jsonl --confirm
+    python relist_sizes.py --confirm --all                # sab (sirf aakhri step)
+    python relist_sizes.py --restore relist_before-<run>.jsonl --confirm [--only-id 3860]
 
 Requires: SUPABASE_URL, SUPABASE_SERVICE_KEY, SHOPIFY_STORE_DOMAIN, SHOPIFY_CLIENT_ID, SHOPIFY_CLIENT_SECRET
 """
 import argparse
 import json
 import os
+import sys
 import time
 from collections import Counter
 from datetime import datetime, timezone
@@ -38,6 +40,7 @@ from datetime import datetime, timezone
 import repair_variant_stock as rv
 import shopify_sync as ss
 from shopify_push import get_size_variants
+from shopify_scraper import NON_PRODUCT  # gift card / GWP / fee - inhe kabhi bikne layak mat banao
 
 NODES_PER_CALL = 25  # single-variant products - sasta query
 BACKUP = os.environ.get("RELIST_BACKUP", f"relist_before-{datetime.now(timezone.utc):%Y%m%dT%H%M%S}.jsonl")
@@ -57,6 +60,7 @@ VARIANTS_CREATE = """mutation($productId: ID!, $variants: [ProductVariantsBulkIn
 VARIANTS_UPDATE = """mutation($productId: ID!, $variants: [ProductVariantsBulkInput!]!) {
   productVariantsBulkUpdate(productId: $productId, variants: $variants) {
     productVariants { id } userErrors { field message code } } }"""
+READ_ALL_QUERY = READ_QUERY.replace("variants(first: 2)", "variants(first: 100)")
 OPTIONS_DELETE = """mutation($productId: ID!, $options: [ID!]!) {
   productOptionsDelete(productId: $productId, options: $options, strategy: POSITION) {
     product { options { name } variants(first: 2) { nodes { id title } } } userErrors { field message code } } }"""
@@ -64,6 +68,10 @@ OPTIONS_DELETE = """mutation($productId: ID!, $options: [ID!]!) {
 
 class RelistError(Exception):
     """Shopify ne mana kiya - run yahin roko (fail-fast), backup + report dekho."""
+
+
+class Skip(Exception):
+    """Is product ko mat chhuo (halat badal gayi) - report karo, run chalta rahe."""
 
 
 def _gql(token, query, variables, key):
@@ -77,8 +85,8 @@ def _gql(token, query, variables, key):
 def build_targets(row):
     """[{size, sku, price, compare_at, qty}] - naye push jaisa (get_size_variants) + sync ka stock rule.
     [] = relist nahi (single size / price 0)."""
-    if not ss._price_ok(row):
-        return []
+    if not ss._price_ok(row) or NON_PRODUCT.search(row.get("name") or ""):
+        return []  # price 0, ya gift card/GWP/fee (2026-10-06: ALO e-Gift Card 13 denominations bik jaate)
     out, seen = [], set()
     for sv in get_size_variants(row):
         size = str(sv["size"]).strip()  # sync bhi stripped size se match karta hai
@@ -101,19 +109,27 @@ def read_shopify(token, product_ids):
     for i in range(0, len(product_ids), NODES_PER_CALL):
         ids = [f"gid://shopify/Product/{p}" for p in product_ids[i:i + NODES_PER_CALL]]
         for node in ss.shopify_graphql(token, READ_QUERY, {"ids": ids})["nodes"]:
-            if not node or len(node["variants"]["nodes"]) != 1:
-                continue
-            v = node["variants"]["nodes"][0]
-            lvl = v["inventoryItem"]["inventoryLevel"]
-            out[node["id"].rsplit("/", 1)[1]] = {
-                "options": node["options"],
-                "variant_id": v["id"], "title": v["title"], "price": v["price"],
-                "compare_at": v["compareAtPrice"], "sku": v["inventoryItem"]["sku"],
-                "inventory_item_id": v["inventoryItem"]["id"].rsplit("/", 1)[1],
-                "available": lvl["quantities"][0]["quantity"] if lvl else None,
-            }
+            snap = _single(node)
+            if snap:
+                out[node["id"].rsplit("/", 1)[1]] = snap
         time.sleep(0.3)
     return out
+
+
+def _single(node):
+    """Shopify node -> snapshot dict, sirf agar EXACTLY 1 variant hai; warna None."""
+    if not node or len(node["variants"]["nodes"]) != 1:
+        return None
+    v = node["variants"]["nodes"][0]
+    lvl = v["inventoryItem"]["inventoryLevel"]
+    return {"options": node["options"], "variant_id": v["id"], "title": v["title"], "price": v["price"],
+            "compare_at": v["compareAtPrice"], "sku": v["inventoryItem"]["sku"],
+            "inventory_item_id": v["inventoryItem"]["id"].rsplit("/", 1)[1],
+            "available": lvl["quantities"][0]["quantity"] if lvl else None}
+
+
+def read_one(token, product_id):
+    return _single(ss.shopify_graphql(token, READ_QUERY, {"ids": [f"gid://shopify/Product/{product_id}"]})["nodes"][0])
 
 
 def plan(token, rows):
@@ -141,8 +157,12 @@ def plan(token, rows):
 
 
 def relist_one(sb, token, it, backup):
-    r, s, t = it["row"], it["shop"], it["targets"]
+    r, t = it["row"], it["targets"]
     pid = f"gid://shopify/Product/{r['shopify_product_id']}"
+    # plan ghanto purana ho sakta hai (sync/orders ne stock badla ho) - abhi ka haal padho, wahi backup + CAS
+    s = read_one(token, r["shopify_product_id"])
+    if not s or s["title"] != "Default Title":
+        raise Skip(f"{r['id']}: ab single 'Default Title' nahi hai ({s and s['title']}) - chhoda")
     backup.write(json.dumps({"supabase_id": r["id"], "product_id": r["shopify_product_id"], "before": s,
                              "targets": t, "at": datetime.now(timezone.utc).isoformat()}) + "\n")
     backup.flush()  # backup PEHLE, phir koi write
@@ -151,6 +171,25 @@ def relist_one(sb, token, it, backup):
     first = res["product"]["variants"]["nodes"][0]
     if first["id"] != s["variant_id"] or first["title"] != t[0]["size"]:
         raise RelistError(f"{r['id']}: unexpected first variant {first} (expected {s['variant_id']} as {t[0]['size']})")
+    size_opt = [o["id"] for o in res["product"]["options"] if o["name"] == "Size"]
+    try:
+        _finish(token, pid, r, s, t)
+    except Exception as e:
+        # adhura product (Size option hai, baaki sizes nahi) - turant wapas 'Default Title' (original id), phir ruko
+        _rollback(token, pid, s, size_opt)
+        raise RelistError(f"{r['id']}: rolled back after {type(e).__name__}: {e}") from e
+    sb.table("products").update({"last_synced_variant_stock": ss.stock_signature(r)}).eq("id", r["id"]).execute()
+
+
+def _rollback(token, pid, s, size_opt):
+    if size_opt:
+        _gql(token, OPTIONS_DELETE, {"productId": pid, "options": size_opt}, "productOptionsDelete")
+    _gql(token, VARIANTS_UPDATE, {"productId": pid, "variants": [{
+        "id": s["variant_id"], "price": s["price"], "compareAtPrice": s["compare_at"],
+        "inventoryItem": {"sku": s["sku"]}}]}, "productVariantsBulkUpdate")
+
+
+def _finish(token, pid, r, s, t):
     _gql(token, VARIANTS_CREATE, {"productId": pid, "variants": [{
         "optionValues": [{"optionName": "Size", "name": x["size"]}], "price": x["price"],
         "compareAtPrice": x["compare_at"], "inventoryItem": {"tracked": True, "sku": x["sku"]},
@@ -163,38 +202,51 @@ def relist_one(sb, token, it, backup):
     if s["available"] != t[0]["qty"]:
         ss.set_size_quantities(token, [(s["inventory_item_id"], s["available"] or 0, t[0]["qty"])],
                                f"gid://luxella-scrapper/Relist/{r['id']}")
-    sb.table("products").update({"last_synced_variant_stock": ss.stock_signature(r)}).eq("id", r["id"]).execute()
 
 
 def apply(sb, token, items, limit, backup_path=None):
-    done = 0
+    done, skipped = 0, []
     with open(backup_path or BACKUP, "a") as backup:
         for it in items:
             if limit and done >= limit:
                 break
-            relist_one(sb, token, it, backup)  # RelistError -> run rukta hai (fail-fast)
+            try:
+                relist_one(sb, token, it, backup)  # RelistError -> run rukta hai (fail-fast, rollback ho chuka)
+            except Skip as e:
+                skipped.append(it["row"]["id"])
+                print(f"  [SKIP] {e}")
+                continue
             done += 1
             print(f"  [RELISTED] {it['row']['site']:14} {it['row']['name'][:40]:40} {len(it['targets'])} sizes")
             time.sleep(0.5)
-    return done
+    return done, skipped
 
 
-def restore(sb, token, path):
+def restore(sb, token, path, only_id=None):
     """Backup se: Size option hatao (POSITION -> original variant wapas 'Default Title'), price/SKU/stock wapas,
-    signature null. Wahi product jo backup mein hai."""
-    ok = 0
+    signature null. Delete se PEHLE check: option sirf 'Size' aur pehla variant original - warna skip.
+    Pehle se restored product pe kuch nahi (stock bhi nahi). only_id = sirf ek Supabase product."""
+    ok, skipped = 0, []
     for line in open(path):
         if not line.strip():
             continue
         e = json.loads(line)
+        if only_id is not None and e["supabase_id"] != only_id:
+            continue
         pid, before = f"gid://shopify/Product/{e['product_id']}", e["before"]
-        node = ss.shopify_graphql(token, READ_QUERY.replace("variants(first: 2)", "variants(first: 100)"),
-                                  {"ids": [pid]})["nodes"][0]
-        size_opt = [o["id"] for o in node["options"] if o["name"] == "Size"]
-        if size_opt:
-            res = _gql(token, OPTIONS_DELETE, {"productId": pid, "options": size_opt}, "productOptionsDelete")
-            if res["product"]["variants"]["nodes"][0]["id"] != before["variant_id"]:
-                raise RelistError(f"restore {e['supabase_id']}: original variant missing")
+        node = ss.shopify_graphql(token, READ_ALL_QUERY, {"ids": [pid]})["nodes"][0]
+        if not node:
+            skipped.append((e["supabase_id"], "product missing"))
+            continue
+        names = [o["name"] for o in node["options"]]
+        if names != ["Size"]:
+            skipped.append((e["supabase_id"], f"options {names} (pehle se restored ya badla hua)"))
+            continue
+        if node["variants"]["nodes"][0]["id"] != before["variant_id"]:
+            skipped.append((e["supabase_id"], "pehla variant original nahi - POSITION galat variant rakhta"))
+            continue
+        _gql(token, OPTIONS_DELETE, {"productId": pid, "options": [o["id"] for o in node["options"]]},
+             "productOptionsDelete")
         _gql(token, VARIANTS_UPDATE, {"productId": pid, "variants": [{
             "id": before["variant_id"], "price": before["price"], "compareAtPrice": before["compare_at"],
             "inventoryItem": {"sku": before["sku"]}}]}, "productVariantsBulkUpdate")
@@ -207,7 +259,7 @@ def restore(sb, token, path):
         sb.table("products").update({"last_synced_variant_stock": None}).eq("id", e["supabase_id"]).execute()
         ok += 1
         time.sleep(0.5)
-    return ok
+    return ok, skipped
 
 
 def main():
@@ -217,15 +269,23 @@ def main():
     ap.add_argument("--only-id", type=int, help="sirf ye Supabase product id (jaise 3860 ALO Runner)")
     ap.add_argument("--restore", help="backup jsonl se wapas (with --confirm)")
     ap.add_argument("--max-age-days", type=float, default=rv.MAX_AGE_DAYS)
+    ap.add_argument("--all", action="store_true", help="--confirm --limit 0 (sab) ke liye zaroori")
     args = ap.parse_args()
 
+    if args.restore is not None:  # "" bhi restore mode hai - kabhi relist pe na gire (reviewer #1)
+        if not args.restore or not os.path.isfile(args.restore) or os.path.getsize(args.restore) == 0:
+            sys.exit(f"ABORT: backup file nahi mili / khaali: {args.restore!r} - kuch nahi kiya")
+    elif args.confirm and not args.limit and not args.only_id and not args.all:
+        sys.exit("ABORT: --confirm ke saath --limit N, --only-id ya --all do - galti se sab pe na chale")
+
     sb, token = ss.get_supabase(), ss.get_access_token()
-    if args.restore:
+    if args.restore is not None:
         if not args.confirm:
             n = sum(1 for line in open(args.restore) if line.strip())
             print(f"DRY RUN: {n} products wapas 'Default Title' pe jaate. --confirm se chalao.")
             return
-        print(f"restored {restore(sb, token, args.restore)} products")
+        ok, skipped = restore(sb, token, args.restore, args.only_id)
+        print(f"restored {ok} products; skipped {len(skipped)}: {skipped[:20]}")
         return
 
     rows, stale = rv.split_fresh(rv.fetch_candidates(sb), args.max_age_days)
@@ -246,8 +306,8 @@ def main():
     if not args.confirm:
         print(f"DRY RUN - kuch nahi likha. report: {REPORT}")
         return
-    done = apply(sb, token, items, args.limit)
-    print(f"APPLIED: {done} products relisted; backup: {BACKUP}")
+    done, skipped = apply(sb, token, items, args.limit)
+    print(f"APPLIED: {done} products relisted; skipped (halat badli) {len(skipped)}: {skipped[:20]}; backup: {BACKUP}")
 
 
 if __name__ == "__main__":
