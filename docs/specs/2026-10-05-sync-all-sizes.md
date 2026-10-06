@@ -93,6 +93,18 @@ scraped but never synced after the push.
 - **Shopify rate limits.** GraphQL cost runs to about 22k reads and roughly 100 writes of 250. The script uses
   cost-aware throttling and resumes from its checkpoint (the signature column).
 - **Extra sync calls.** These only happen when a signature changes, so it's a few hundred per run at most.
+- **Stale scrape data drives the repair (added 2026-10-06).** 2,912 of 22,697 candidates were last scraped 3 to 30+
+  days ago. Most were delisted at the source, and the dead-site sizes were set to 0 on 2026-10-05. Repairing them
+  from old data would set sold-out or removed sizes back to 10. Mitigation:
+  - `--max-age-days` (default 3): rows whose `scraped_at` is older, or null, get no stock writes and no signature.
+  - The skipped count is shown as `skipped_stale` in the dry-run report.
+  - Known gap (reviewer, 2026-10-06), a follow-up slice:
+    - `mark_unseen_sold_out` sets every size to false but leaves `scraped_at` old. A delisted multi-size row
+      therefore stays skipped with a null signature.
+    - `shopify_sync`'s old path then zeroes only the first size on Shopify.
+    - Fix: let `split_fresh` accept a stale row when **all** its sizes are sold out. Every target is then 0, and
+      a 0 can never sell a missing item. Or have delisted-marking send the row through `sync_sizes`.
+    - This doesn't affect the 18 dead sites, whose sizes were zeroed per inventory item on 2026-10-05.
 
 ## Rollout
 1. **Add the schema column first (with approval).** If the code is merged before the column exists:

@@ -210,6 +210,19 @@ ss.set_size_quantities = _stale
 _sigs.clear()
 assert rv.apply(_SB2(), "t", items, limit=0, backup_path=_bk) == (0, [11]) and len(_sigs) == 1  # sirf P2
 assert open(_bk).read() == ""
+# repair stale guard (2026-10-06): purane / bina scraped_at wale products ko repair chhoota nahi
+from datetime import datetime as _dt, timezone as _tz
+_now = _dt(2026, 10, 6, 12, 0, tzinfo=_tz.utc)
+_fr = {"id": 21, "site": "a", "scraped_at": "2026-10-05T12:00:00+00:00"}      # 1 din
+_edge = {"id": 22, "site": "a", "scraped_at": "2026-10-03T12:00:00+00:00"}    # theek 3 din = abhi bhi fresh
+_old = {"id": 23, "site": "b", "scraped_at": "2026-10-01T12:00:00+00:00"}     # 5 din
+_naive = {"id": 24, "site": "b", "scraped_at": "2026-10-06T10:00:00"}         # naive = UTC, 2 ghante
+_none = {"id": 25, "site": "c", "scraped_at": None}
+_f, _s = rv.split_fresh([_fr, _edge, _old, _naive, _none], 3, now=_now)
+assert [r["id"] for r in _f] == [21, 22, 24] and [r["id"] for r in _s] == [23, 25], (_f, _s)
+assert rv.split_fresh([_old], 7, now=_now)[0] == [_old]  # --max-age-days 7 se 5-din wala andar
+import inspect as _inspect
+assert "scraped_at" in _inspect.getsource(rv.fetch_candidates)  # warna sab stale dikhenge aur repair kuch nahi karega
 # sync: unmatched size -> kuch mat likho, signature mat badlo; size label whitespace match
 ss = importlib.reload(m.shopify_sync)
 ss.time.sleep = lambda s: None
