@@ -16,6 +16,9 @@ Kya karta hai (sirf last_synced_variant_stock IS NULL wale pushed multi-size pro
   - --confirm: CAS (changeFromQuantity) se stock set, phir product ka signature likhta hai
     (resume-able: dobara chalao to bache hue se shuru). Signature ke baad shopify_sync khud sambhalta hai.
   - Unmatched sizes (Shopify pe hai, scrape mein nahi) ko chhoota nahi; 2% se zyada -> --confirm mana (size naam mismatch).
+  - Purana scrape (scraped_at > --max-age-days, default 3, ya khaali) ko BILKUL nahi chhoota - na stock, na signature.
+    Wo data galat ho sakta hai (2026-10-06: 2,912 products 3-30+ din purane, zyadatar brand site se hat chuke;
+    dead sites ke sizes 0 kiye gaye the - repair unhe wapas 10 kar deta). Unhe delisted-marking sambhalega.
 
 Usage (GitHub Actions: .github/workflows/repair-variant-stock.yml):
     python repair_variant_stock.py                     # dry run, sab
@@ -31,7 +34,8 @@ import os
 import random
 import sys
 import time
-from datetime import datetime, timezone
+from collections import Counter
+from datetime import datetime, timedelta, timezone
 
 import shopify_sync as ss
 from shopify_push import get_size_variants
@@ -39,6 +43,7 @@ from shopify_push import get_size_variants
 PAGE = 1000
 NODES_PER_CALL = 2  # 1000-point single-query cost limit: ~300-500/product (100 variants)
 MAX_UNMATCHED_SHARE = 0.02
+MAX_AGE_DAYS = 3  # isse purane scrape ka size data repair ke liye bharosemand nahi
 # sirf jo Shopify ne accept kiya; har run alag file (local pe pichla batch overwrite na ho)
 BACKUP = os.environ.get("REPAIR_BACKUP", f"variant_stock_before-{datetime.now(timezone.utc):%Y%m%dT%H%M%S}.jsonl")
 PLAN = os.environ.get("REPAIR_PLAN", "variant_stock_plan.jsonl")         # dry run / planned (restore ke liye nahi)
@@ -54,7 +59,7 @@ def fetch_candidates(sb):
     rows, last = [], 0
     while True:
         page = (sb.table("products")
-                .select("id,name,site,price,in_stock,variants,category,currency,shopify_product_id")
+                .select("id,name,site,price,in_stock,variants,category,currency,shopify_product_id,scraped_at")
                 .eq("pushed_to_shopify", True).not_.is_("shopify_product_id", "null")
                 .is_("last_synced_variant_stock", "null")
                 .gt("id", last).order("id").limit(PAGE).execute().data)
@@ -62,6 +67,24 @@ def fetch_candidates(sb):
         if len(page) < PAGE:
             return rows
         last = page[-1]["id"]
+
+
+def _scraped_at(row):
+    s = row.get("scraped_at")
+    if not s:
+        return None
+    t = datetime.fromisoformat(str(s).replace("Z", "+00:00"))
+    return t if t.tzinfo else t.replace(tzinfo=timezone.utc)  # naive = UTC (Supabase timestamp)
+
+
+def split_fresh(rows, max_age_days=MAX_AGE_DAYS, now=None):
+    """(fresh, stale). Stale = scraped_at khaali ya max_age_days se purana - in pe kuch mat likho."""
+    cutoff = (now or datetime.now(timezone.utc)) - timedelta(days=max_age_days)
+    fresh, stale = [], []
+    for r in rows:
+        t = _scraped_at(r)
+        (fresh if t is not None and t >= cutoff else stale).append(r)
+    return fresh, stale
 
 
 def shopify_sizes_bulk(token, product_ids):
@@ -191,6 +214,8 @@ def main():
     ap.add_argument("--limit", type=int, default=0, help="sirf itne badalne wale products")
     ap.add_argument("--restore", help="backup jsonl se wapas (with --confirm)")
     ap.add_argument("--verify", type=int, default=0, help="read-only jaanch, n random products")
+    ap.add_argument("--max-age-days", type=float, default=MAX_AGE_DAYS,
+                    help="isse purane scrape wale products chhodo (stock + signature dono)")
     args = ap.parse_args()
 
     sb = ss.get_supabase()
@@ -208,9 +233,12 @@ def main():
         print(f"restored {ok} sizes, {stale} skipped (stock beech mein badla)")
         return
 
-    rows = fetch_candidates(sb)
-    print(f"{len(rows)} multi-size products bina signature ke - Shopify se padh rahe hain...")
+    rows, stale_rows = split_fresh(fetch_candidates(sb), args.max_age_days)
+    stale_sites = Counter(r["site"] for r in stale_rows).most_common(10)
+    print(f"{len(rows)} multi-size products bina signature ke (scrape <= {args.max_age_days:g} din) - Shopify se padh rahe hain...")
+    print(f"{len(stale_rows)} purane scrape wale chhode (kuch nahi likhega): {stale_sites}")
     items, totals = plan(token, rows)
+    totals["skipped_stale"] = len(stale_rows)
     unmatched_share = totals["unmatched_sizes"] / max(1, totals["sizes_checked"])
     totals["unmatched_share"] = round(unmatched_share, 4)
     samples = [{"id": it["row"]["id"], "site": it["row"]["site"], "name": it["row"]["name"],
