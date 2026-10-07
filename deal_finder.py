@@ -368,7 +368,6 @@ def main(argv=None, fetch=None, now=None):
             for c in top:
                 propose(ag, c)
             drops = [d for d in map(_deal_out, top) if d["change"] == "price_decrease"]
-            rated, up_pct = ratings_summary()
             kpis = {"new finds": len(top), "price drops caught": len(drops), "rated so far": rated, "up %": up_pct,
                     "buys proposed": sum(w["action"] == "propose_buy" for w in ag.writes),
                     "average discount": round(sum(d["discount_pct"] for d in drops) / len(drops), 1) if drops else None}

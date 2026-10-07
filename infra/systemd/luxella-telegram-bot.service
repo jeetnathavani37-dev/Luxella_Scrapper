@@ -4,6 +4,7 @@
 [Unit]
 Description=Luxella Telegram approval bot (founder only, long polling)
 After=network-online.target
+Wants=network-online.target
 
 [Service]
 Type=simple
@@ -11,6 +12,8 @@ WorkingDirectory=/root/Luxella_Scrapper
 ExecStart=/root/Luxella_Scrapper/.venv/bin/python /root/Luxella_Scrapper/telegram_bot.py
 Restart=on-failure
 RestartSec=15
+# 1 = token rejected (401), 2 = not configured: restart loop se kuch nahi sudhrega
+RestartPreventExitStatus=1 2
 
 [Install]
 WantedBy=multi-user.target

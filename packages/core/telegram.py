@@ -8,6 +8,7 @@ reaches a log. send/edit/answer never raise - they return False/None.
 """
 import json
 import os
+import sys
 import urllib.request
 
 DEFAULT_KEYFILE = "/root/.config/agent-keys/telegram-bot.env"
@@ -26,6 +27,9 @@ def config():
     if os.environ.get("LUXELLA_TELEGRAM", "1") == "0":
         return None
     try:
+        if os.stat(keyfile()).st_mode & 0o077:  # token file sirf root padh sake
+            print("[telegram] key file is group/world readable - chmod 600 it; telegram disabled", file=sys.stderr)
+            return None
         with open(keyfile()) as f:
             raw = f.read()
     except OSError:

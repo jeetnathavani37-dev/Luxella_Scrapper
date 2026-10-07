@@ -50,8 +50,9 @@ All commands run from `/root/Luxella_Scrapper` with `.venv/bin/python`.
 2. In an SSH terminal, run `install -m 600 /dev/stdin /root/.config/agent-keys/telegram-bot.env`, type
    `TELEGRAM_BOT_TOKEN=<token>`, press Enter, then Ctrl-D. Never paste the token in chat.
 3. Send `/start` to the new bot.
-4. Run `.venv/bin/python telegram_bot.py --whoami`. It prints only your chat id and appends
-   `TELEGRAM_FOUNDER_CHAT_ID` to the key file.
+4. Run `.venv/bin/python telegram_bot.py --whoami`. It prints the chat id, @username and first name of whoever
+   sent /start. **Check that it is you**, then run `.venv/bin/python telegram_bot.py --whoami --confirm <that id>`.
+   This writes `TELEGRAM_FOUNDER_CHAT_ID`. It never prints the token, and it refuses if the id is already set.
 5. Install the unit and enable it:
    `cp infra/systemd/luxella-telegram-bot.service /etc/systemd/system/ && systemctl daemon-reload && systemctl enable --now luxella-telegram-bot`
 

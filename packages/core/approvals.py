@@ -164,7 +164,7 @@ def _ntfy(title, body, priority, tags):
 def proposal_card(rec):
     from packages.core.agent import redact  # lazy: agent imports approvals
     args = ", ".join(f"{k}={str(v)[:80]}" for k, v in redact(rec.get("args") or {}).items())
-    return (f"Approval needed ({rec.get('risk')})\n{rec.get('agent')}: {str(rec.get('action'))[:300]}\n"
+    return (f"Approval needed ({rec.get('risk')})\n{rec.get('agent')}: {str(redact([rec.get('action')])[0])[:300]}\n"
             f"tool: {rec.get('tool')}\nargs: {args or '-'}\nid: {rec['id']}")
 
 
@@ -173,8 +173,9 @@ def approval_buttons(pid):
 
 
 def _notify(pid, action, risk):
+    rec = _state().get(pid)  # notify-test fake id ka koi record nahi - tab sirf plain text, bina buttons
     return push(f"Luxella approval needed ({risk})", f"{action[:120]} [{pid}]", tags="inbox_tray",
-                card=proposal_card(get(pid)), buttons=approval_buttons(pid))
+                card=proposal_card(rec) if rec else None, buttons=approval_buttons(pid) if rec else None)
 
 
 def _selftest():

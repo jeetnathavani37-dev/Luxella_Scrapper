@@ -92,7 +92,8 @@ def on_callback(cq, founder):
         day, _, rest2 = rest.partition(":")
         pid, _, sign = rest2.partition(":")
         import deal_finder
-        ok = pid.isdigit() and sign in "+-" and len(sign) == 1 and deal_finder.record_rating(day, int(pid), sign == "+")
+        ok = (pid.isascii() and pid.isdigit() and sign in ("+", "-")
+              and deal_finder.record_rating(day, int(pid), sign == "+"))
         telegram.answer(cid, ("👍 saved" if sign == "+" else "👎 saved") if ok else "not a current deal")
     elif kind == "x":
         telegram.answer(cid, "cancelled")
@@ -140,12 +141,15 @@ def run_once(founder, poll_timeout=50):
     updates = telegram.api("getUpdates", {"offset": load_offset(), "timeout": poll_timeout,
                                           "allowed_updates": ["message", "callback_query"]}, timeout=poll_timeout + 10)
     for u in updates:
-        handle(u, founder)
+        try:
+            handle(u, founder)
+        except Exception as e:  # ek kharab update bot ko hamesha ke liye na giraye (replay -> crash loop)
+            log(f"update {u.get('update_id')} failed: {type(e).__name__}")
         save_offset(u["update_id"] + 1)
     return len(updates)
 
 
-def whoami():
+def whoami(confirm=None):
     """Setup: jisne bot ko /start bheja uska chat id key file mein append (exactly 1 private chat ho tabhi)."""
     cfg = telegram.config()
     if not cfg:
@@ -158,14 +162,19 @@ def whoami():
     for u in telegram.api("getUpdates", {"timeout": 0}, cfg=cfg):
         m = u.get("message") or {}
         if m.get("chat", {}).get("type") == "private":
-            chats[m["chat"]["id"]] = m.get("from", {}).get("username", "")
+            fr = m.get("from", {})
+            chats[m["chat"]["id"]] = f"{fr.get('username', '')} ({fr.get('first_name', '')})"
     for cid, user in chats.items():
         print(f"chat id: {cid}  username: @{user}")
     if len(chats) != 1:
         print("need exactly 1 private chat that sent /start - nothing written")
         return 2
+    cid = next(iter(chats))
+    if confirm != str(cid):  # koi anjaan pehle /start bhej de to wo founder na ban jaaye: founder khud id confirm kare
+        print(f"check the username above is YOU, then run: telegram_bot.py --whoami --confirm {cid}")
+        return 2
     with open(telegram.keyfile(), "a") as f:
-        f.write(f"\nTELEGRAM_FOUNDER_CHAT_ID={next(iter(chats))}\n")
+        f.write(f"\nTELEGRAM_FOUNDER_CHAT_ID={cid}\n")
     os.chmod(telegram.keyfile(), 0o600)
     print("saved")
     return 0
@@ -174,7 +183,7 @@ def whoami():
 def main(argv=None):
     argv = sys.argv[1:] if argv is None else argv
     if argv[:1] == ["--whoami"]:
-        return whoami()
+        return whoami(argv[2] if argv[1:2] == ["--confirm"] and len(argv) > 2 else None)
     cfg = telegram.config()
     if not cfg or not cfg["chat_id"]:
         log("not configured (token + TELEGRAM_FOUNDER_CHAT_ID needed)")
