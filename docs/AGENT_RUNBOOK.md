@@ -42,3 +42,41 @@ All commands run from `/root/Luxella_Scrapper` with `.venv/bin/python`.
 - If the tool raises during `execute`, the proposal is closed as executed with `{"ok": false, "error": <type>}`.
   Running it again needs a new proposal and a new founder approval, so a half-applied action is never repeated
   silently.
+
+## Telegram bot (spec docs/specs/2026-10-07-telegram-approvals.md)
+**One-time setup (founder):**
+1. In Telegram, open @BotFather and send `/newbot`. Pick a name and a username ending in `_bot`, then copy the
+   token.
+2. In an SSH terminal, run `install -m 600 /dev/stdin /root/.config/agent-keys/telegram-bot.env`, type
+   `TELEGRAM_BOT_TOKEN=<token>`, press Enter, then Ctrl-D. Never paste the token in chat.
+3. Send `/start` to the new bot.
+4. Run `.venv/bin/python telegram_bot.py --whoami`. It prints only your chat id and appends
+   `TELEGRAM_FOUNDER_CHAT_ID` to the key file.
+5. Install the unit and enable it:
+   `cp infra/systemd/luxella-telegram-bot.service /etc/systemd/system/ && systemctl daemon-reload && systemctl enable --now luxella-telegram-bot`
+
+**Test:** create a test proposal with
+`.venv/bin/python -c "from packages.core import approvals; print(approvals.propose('ops','test-bot','Telegram test','low','noop',{}))"`.
+A card with ✅/❌ should arrive on the phone.
+
+**Commands:**
+- `/pending`
+- `/status`
+- `/kill <agent|ALL>`: asks for a confirm tap; only agents in `agents.json`, or `ALL`.
+- `/unkill <agent|ALL>`
+- `/help`
+
+**Ratings:** the 👍/👎 buttons under Deal Finder items go to `/root/luxella-ops/ratings.jsonl`. The deals
+digest shows "rated so far".
+
+**Security:**
+- Only the founder's private chat is handled. Other accounts are ignored, and the log shows only their numeric id.
+- The bot never executes anything. Approve only marks the proposal approved.
+- The bot has no Shopify or Supabase keys.
+
+**Rotate the token:**
+1. In BotFather, send `/revoke` and get a new token.
+2. Rewrite the key file with step 2 above, keeping the `TELEGRAM_FOUNDER_CHAT_ID` line.
+3. Run `systemctl restart luxella-telegram-bot`.
+
+**Turn it off:** `systemctl disable --now luxella-telegram-bot`. ntfy keeps working.

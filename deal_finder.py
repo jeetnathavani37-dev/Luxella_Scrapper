@@ -138,6 +138,34 @@ def proposals_for(change, product):
     return acts
 
 
+RATINGS_FILE = "ratings.jsonl"
+
+
+def record_rating(day, product_id, up):
+    """Founder ka 👍/👎 (Telegram). Sirf usi din ke deal-finder run ke top mein ho tabhi save (nakli button nahi chalta).
+    id = <day>:<product_id> -> dobara tap pe latest jeetta hai (_store.read_all latest line)."""
+    from packages.core import _store, runs
+    shown = {t.get("product_id") for r in runs.recent(500) if r.get("agent") == "deal-finder"
+             and r.get("at", "")[:10].replace("-", "") == day for t in (r.get("outputs") or {}).get("top", [])}
+    if int(product_id) not in shown:
+        return False
+    _store.append(_store.path_for(RATINGS_FILE), {"id": f"{day}:{product_id}", "run_id": day,
+                                                  "product_id": int(product_id), "rating": "up" if up else "down",
+                                                  "at": datetime.now(timezone.utc).isoformat()})
+    return True
+
+
+def ratings_summary():
+    """(rated count, % up) - promotion data (spec: >= 30 rated, >= 95% up)."""
+    from packages.core import _store
+    latest = {}
+    for r in _store.read_all(_store.path_for(RATINGS_FILE)):
+        latest[r["id"]] = r["rating"]
+    if not latest:
+        return 0, None
+    return len(latest), round(sum(v == "up" for v in latest.values()) / len(latest) * 100, 1)
+
+
 def rating_buttons(day, top):
     """Har deal pe 👍/👎 (callback <= 64 bytes): d:<YYYYMMDD>:<product_id>:+|-  - bot slice 3 save karta hai."""
     tag = day.strftime("%Y%m%d")
@@ -334,11 +362,14 @@ def main(argv=None, fetch=None, now=None):
             changes, products = got
             top, excluded = find_deals(changes, products, now)
             full, phone = build_digest(top, excluded, len(changes), now.date())
+            rated, up_pct = ratings_summary()
+            full += f"\nrated so far: {rated}" + (f", up {up_pct}%" if up_pct is not None else "") + " (tap 👍/👎)"
             print(full + "\n---\n" + phone)
             for c in top:
                 propose(ag, c)
             drops = [d for d in map(_deal_out, top) if d["change"] == "price_decrease"]
-            kpis = {"new finds": len(top), "price drops caught": len(drops),
+            rated, up_pct = ratings_summary()
+            kpis = {"new finds": len(top), "price drops caught": len(drops), "rated so far": rated, "up %": up_pct,
                     "buys proposed": sum(w["action"] == "propose_buy" for w in ag.writes),
                     "average discount": round(sum(d["discount_pct"] for d in drops) / len(drops), 1) if drops else None}
             if args.dry_run:

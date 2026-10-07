@@ -88,6 +88,12 @@ def on_callback(cq, founder):
         result = agent.set_kill(rest, True)
         telegram.answer(cid, "killed")
         telegram.edit(founder, mid, result)
+    elif kind == "d":
+        day, _, rest2 = rest.partition(":")
+        pid, _, sign = rest2.partition(":")
+        import deal_finder
+        ok = pid.isdigit() and sign in "+-" and len(sign) == 1 and deal_finder.record_rating(day, int(pid), sign == "+")
+        telegram.answer(cid, ("👍 saved" if sign == "+" else "👎 saved") if ok else "not a current deal")
     elif kind == "x":
         telegram.answer(cid, "cancelled")
         telegram.edit(founder, mid, "Cancelled.")

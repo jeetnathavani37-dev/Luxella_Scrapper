@@ -1222,5 +1222,30 @@ for _k, _v in _t2_old.items():
         _to.environ.pop(_k, None)
     else:
         _to.environ[_k] = _v
+# telegram slice 3: ratings saved only for products in that day's deal-finder run; latest wins; KPI summary
+_t3_old = {k: _to.environ.get(k) for k in ("LUXELLA_OPS_DIR", "LUXELLA_TELEGRAM_KEYFILE")}
+_to.environ.update({"LUXELLA_OPS_DIR": _ttf.mkdtemp(), "LUXELLA_TELEGRAM_KEYFILE": _tkey})
+open(_tkey, "w").write("TELEGRAM_BOT_TOKEN=123:SECRET\nTELEGRAM_FOUNDER_CHAT_ID=42\n")
+from packages.core import runs as _truns
+_t3day = __import__("datetime").datetime.now(__import__("datetime").timezone.utc).strftime("%Y%m%d")
+_truns.log_run("sourcing", "deal-finder", outputs={"top": [{"product_id": 101}, {"product_id": 102}]}, status="dry_run")
+assert df.record_rating(_t3day, 101, True) and df.record_rating(_t3day, 102, True)
+assert not df.record_rating(_t3day, 999, True) and not df.record_rating("20200101", 101, True)   # not shown that day
+assert df.ratings_summary() == (2, 100.0)
+df.record_rating(_t3day, 102, False)                                                            # re-tap: latest wins
+assert df.ratings_summary() == (2, 50.0)
+_tcalls.clear(); _tg.urllib.request.urlopen = _tfake
+tb.handle(_cb(f"d:{_t3day}:101:-"), 42)
+assert df.ratings_summary() == (2, 0.0) and _tcalls[-1][1]["text"] == "👎 saved"
+tb.handle(_cb(f"d:{_t3day}:555:+"), 42)
+assert _tcalls[-1][1]["text"] == "not a current deal" and df.ratings_summary()[0] == 2
+tb.handle(_cb(f"d:{_t3day}:101:x"), 42)
+assert _tcalls[-1][1]["text"] == "not a current deal"
+_tg.urllib.request.urlopen = _t_orig_urlopen
+for _k, _v in _t3_old.items():
+    if _v is None:
+        _to.environ.pop(_k, None)
+    else:
+        _to.environ[_k] = _v
 
 print("ok")
