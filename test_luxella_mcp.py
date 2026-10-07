@@ -230,6 +230,39 @@ assert [r["id"] for r in _f] == [21, 22, 24] and [r["id"] for r in _s] == [23, 2
 assert rv.split_fresh([_old], 7, now=_now)[0] == [_old]  # --max-age-days 7 se 5-din wala andar
 import inspect as _inspect
 assert "scraped_at" in _inspect.getsource(rv.fetch_candidates)  # warna sab stale dikhenge aur repair kuch nahi karega
+# repair read retry (2026-10-06 run 37489368238 ek Shopify 500 pe gira): 5xx/timeout pe dobara, 4xx pe turant fail
+import requests as _rq
+def _http(code):
+    r = _rq.Response(); r.status_code = code
+    return _rq.HTTPError(f"{code}", response=r)
+_orig_gql, _orig_sleep = rv.ss.shopify_graphql, rv.time.sleep
+rv.time.sleep = lambda s: None
+_calls = []
+def _flaky(tok, q, v):
+    _calls.append(1)
+    if len(_calls) == 1:
+        raise _http(500)
+    if len(_calls) == 2:
+        raise _rq.Timeout("t")
+    return {"nodes": []}
+rv.ss.shopify_graphql = _flaky
+assert rv.read_graphql("t", "q", {}) == {"nodes": []} and len(_calls) == 3
+_calls.clear()
+def _always500(tok, q, v): _calls.append(1); raise _http(503)
+rv.ss.shopify_graphql = _always500
+try:
+    rv.read_graphql("t", "q", {}); raise AssertionError("4 baar 503 ke baad bhi raise hona chahiye")
+except _rq.HTTPError:
+    assert len(_calls) == 4
+_calls.clear()
+def _auth(tok, q, v): _calls.append(1); raise _http(401)
+rv.ss.shopify_graphql = _auth
+try:
+    rv.read_graphql("t", "q", {}); raise AssertionError("401 pe retry nahi")
+except _rq.HTTPError:
+    assert len(_calls) == 1
+rv.ss.shopify_graphql, rv.time.sleep = _orig_gql, _orig_sleep
+assert "read_graphql(token, SIZES_QUERY" in open(rv.__file__).read()  # bulk reader (test mein lambda se badla) asli mein retry use kare
 # sync: unmatched size -> kuch mat likho, signature mat badlo; size label whitespace match
 ss = importlib.reload(m.shopify_sync)
 ss.time.sleep = lambda s: None
