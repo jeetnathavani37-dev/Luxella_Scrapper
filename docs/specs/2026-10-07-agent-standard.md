@@ -25,7 +25,8 @@ spend their effort on their job, not on re-inventing safety.
    ```python
    with Agent("sourcing", "deal-finder", mode="shadow", write_budget=20) as ag:
        ag.read("luxella_query", fn, *args)                 # logged tool call
-       ag.write("price_alert", tool, args, fn, risk="low") # the ONLY way an agent changes anything
+       ag.write("price_alert", "price_alert", args, risk="low") # the ONLY way an agent changes anything;
+                                                           # tool -> callable comes from Agent(..., tools={...})
    ```
    - **Modes:**
 
@@ -70,8 +71,10 @@ spend their effort on their job, not on re-inventing safety.
      the founder's judgement on a sample of at least 30. The eval gate must be green.
    - **approve → auto, for ONE action type:** at least 14 days, at least 95% of proposals approved with no
      critical rejections, the eval gate green, and a `write_budget` set.
-   - **Automatic demotion:** any critical eval regression, or 2 founder rejections in a row on an auto action,
-     moves it back to `approve`. The harness enforces this from the approvals log.
+   - **Demotion (changed in planning, founder-approved plan 2026-10-07):** automatic demotion is **not built**.
+     Auto actions never create a proposal, so "2 rejections on an auto action" could never fire, and no agent can
+     reach auto before day 21. Demote by editing `agents.json` through a PR, or stop at once with `kill`. Revisit
+     ("founder rejects an executed auto action" event) when the first agent reaches auto.
 4. **Retrofit `daily_report.py`** onto `Agent` (read-only, budget 0). It gets the kill switch and the failure
    alert for free.
 5. **Docs:**
@@ -90,6 +93,16 @@ spend their effort on their job, not on re-inventing safety.
    - secrets are redacted in the log;
    - demotion triggers after 2 rejections;
    - the registry CI rules.
+
+**Planning additions (approved with the slice plan):**
+- `write()` takes a tool *name*. Callables are bound in code via `Agent(tools={name: fn})`, so an approved
+  proposal can only run code bound to that tool name. `execute(pid, tool, args)` also checks that the proposal
+  belongs to this agent.
+- `Agent()` refuses `approve`/`auto` unless `agents.json` has the same mode, at least that budget, and those
+  auto actions. Code cannot promote itself.
+- `execute()` counts against the write budget.
+- Read-only agents use mode `read_only` (budget forced to 0). `record=False` skips logs and alerts (used by
+  `--dry-run`).
 
 ## Out of scope
 - **Any new agent.** Deal Finder is next, as its own `agent-spec` on top of this harness.
