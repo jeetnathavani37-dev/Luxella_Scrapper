@@ -576,7 +576,7 @@ _old_topic = _os2.environ.get("LUXELLA_NTFY_TOPIC"); _old_sleep = dr.RETRY_SLEEP
 _os2.environ["LUXELLA_NTFY_TOPIC"] = "test-topic"
 _fake = {"supabase": lambda: _full["supabase"], "shopify": lambda: _full["shopify"],
          "actions": lambda: _full["actions"], "approvals": lambda: {"count": 0, "top": []},
-         "ports": lambda: {"public": []}}
+        "ports": lambda: {"public": []}}
 assert dr.main(["--dry-run"], readers=_fake, now=_now) == 0
 assert _os2.listdir(_ops) == [] and _sent == []                                   # dry-run: kuch nahi
 assert dr.main(["--no-push"], readers=_fake, now=_now) == 0

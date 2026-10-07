@@ -58,7 +58,7 @@ can't take over the store.
 5. `fail2ban-client status sshd` shows the jail active. After 24 h, banned IPs > 0 and failed logins drop sharply.
 6. All local services keep working: n8n, Chatwoot, Coolify, Uptime Kuma, the daily report and the deal finder.
    Outbound calls to GitHub, Supabase, Shopify and ntfy are unaffected.
-7. The daily report shows `public ports: 22 only`. The offline test proves that a fake 0.0.0.0:8080 listener
+7. The daily report shows no `public ports` problem; its Data line shows `ports @ HH:MM`, so the check ran. The offline test proves that a fake 0.0.0.0:8080 listener
    makes it bad.
 
 ## Writes to production

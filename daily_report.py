@@ -229,6 +229,10 @@ def public_listeners(ss_output):
 def read_ports():
     import subprocess
     run = subprocess.run(["ss", "-ltnH"], capture_output=True, text=True, timeout=10, check=True)
+    if not any(line.split()[3].endswith(":22") for line in run.stdout.splitlines() if len(line.split()) > 3):
+        raise RuntimeError("no :22 listener seen - ss output not trustworthy")  # khaali output "saaf" na lage
+    # ponytail: TCP only, and relies on docker-proxy (default userland-proxy) showing published ports in ss;
+    # if daemon.json ever sets "userland-proxy": false, add a `docker ps` port check here.
     return {"public": public_listeners(run.stdout)}
 
 
