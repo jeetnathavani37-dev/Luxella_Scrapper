@@ -1,0 +1,19 @@
+# Repo copy = source of truth. Install: cp infra/systemd/luxella-telegram-bot.service /etc/systemd/system/ && systemctl daemon-reload
+# Ships DISABLED; after the founder's phone test: systemctl enable --now luxella-telegram-bot
+# No ~/.luxella.env on purpose: the bot has no Shopify/Supabase keys. It reads only /root/.config/agent-keys/telegram-bot.env.
+[Unit]
+Description=Luxella Telegram approval bot (founder only, long polling)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+WorkingDirectory=/root/Luxella_Scrapper
+ExecStart=/root/Luxella_Scrapper/.venv/bin/python /root/Luxella_Scrapper/telegram_bot.py
+Restart=on-failure
+RestartSec=15
+# 1 = token rejected (401), 2 = not configured: restart loop se kuch nahi sudhrega
+RestartPreventExitStatus=1 2
+
+[Install]
+WantedBy=multi-user.target

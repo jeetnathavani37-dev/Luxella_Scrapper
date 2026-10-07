@@ -235,29 +235,40 @@ class Agent:
 
 # ---------- CLI: python -m packages.core.agent kill|unkill <name|ALL> / status ----------
 
+def status_text():
+    lines = ["killed: " + (", ".join(killed_agents()) or "-")]
+    last = {}
+    for r in runs.recent(500):
+        last[r["agent"]] = r
+    lines += [f"{name:20} {r['status']:16} {r.get('mode', '-'):10} {r['at'][:16]}" for name, r in sorted(last.items())]
+    return "\n".join(lines)
+
+
+def set_kill(name, on):
+    """Kill file bana/hata. Naam regex pe check hota hai (path traversal nahi). CLI + Telegram dono yahi use karte hain."""
+    if not _NAME.fullmatch(name):
+        raise ValueError(f"bad agent name {name!r}")
+    kdir = os.path.join(_store.ops_dir(), "kill")
+    os.makedirs(kdir, mode=0o700, exist_ok=True)
+    path = os.path.join(kdir, name)
+    if on:
+        os.close(os.open(path, os.O_CREAT | os.O_WRONLY, 0o600))
+        return f"killed {name} - next read/write stops it"
+    if os.path.exists(path):
+        os.remove(path)
+        return f"unkilled {name}"
+    return f"{name} was not killed"
+
+
 def _cli(argv):
     if argv[:1] == ["status"]:
-        print("killed:", ", ".join(killed_agents()) or "-")
-        last = {}
-        for r in runs.recent(500):
-            last[r["agent"]] = r
-        for name, r in sorted(last.items()):
-            print(f"{name:20} {r['status']:16} {r.get('mode', '-'):10} {r['at'][:16]}")
+        print(status_text())
         return 0
     if len(argv) != 2 or argv[0] not in ("kill", "unkill") or not _NAME.fullmatch(argv[1]):
         print("usage: python -m packages.core.agent kill|unkill <agent-name|ALL> | status", file=sys.stderr)
         return 2
-    kdir = os.path.join(_store.ops_dir(), "kill")
-    os.makedirs(kdir, mode=0o700, exist_ok=True)
-    path = os.path.join(kdir, argv[1])
-    if argv[0] == "kill":
-        os.close(os.open(path, os.O_CREAT | os.O_WRONLY, 0o600))
-        print(f"killed {argv[1]} - next read/write stops it")
-    elif os.path.exists(path):
-        os.remove(path)
-        print(f"unkilled {argv[1]}")
+    print(set_kill(argv[1], argv[0] == "kill"))
     return 0
-
 
 if __name__ == "__main__":
     sys.exit(_cli(sys.argv[1:]))

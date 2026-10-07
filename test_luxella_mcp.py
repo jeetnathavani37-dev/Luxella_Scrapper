@@ -3,6 +3,7 @@ Run: .venv/bin/python test_luxella_mcp.py"""
 import asyncio
 import os
 
+os.environ["LUXELLA_TELEGRAM_KEYFILE"] = "/nonexistent/telegram-bot.env"  # tests kabhi asli Telegram pe na bhejein
 for k in ("SUPABASE_URL", "SUPABASE_SERVICE_KEY"):
     os.environ[k] = ""  # empty = load_dotenv ~/.luxella.env se override nahi karega
 
@@ -665,7 +666,7 @@ _a_old_ops, _a_old_kill = _ao.environ.get("LUXELLA_OPS_DIR"), _ao.environ.pop("L
 _ao.environ["LUXELLA_OPS_DIR"] = _atf.mkdtemp()
 _a_orig_push, _a_orig_notify = _ag.approvals.push, _aap._notify
 _apush = []
-_ag.approvals.push = lambda title, body, priority="default", tags="": _apush.append((title, body, priority)) or True
+_ag.approvals.push = lambda title, body, priority="default", tags="", **_k: _apush.append((title, body, priority)) or True
 _aap._notify = lambda *a: False
 def _aruns():
     return [_aj.loads(x) for x in open(_ao.path.join(_ao.environ["LUXELLA_OPS_DIR"], "agent_runs.jsonl"))]
@@ -994,7 +995,7 @@ from packages.core import approvals as _dap, agent as _dag
 _d_old_ops = _dos.environ.get("LUXELLA_OPS_DIR")
 _dops = _dtf2.mkdtemp(); _dos.environ["LUXELLA_OPS_DIR"] = _dops
 _d_orig_push, _dsent = _dap.push, []
-_dap.push = lambda title, body, priority="default", tags="": _dsent.append((title, body, priority)) or True
+_dap.push = lambda title, body, priority="default", tags="", **_k: _dsent.append((title, body, priority)) or True
 _d_orig_sleep = dr.RETRY_SLEEP; dr.RETRY_SLEEP = 0
 def _druns():
     return [_dj.loads(x) for x in open(_dos.path.join(_dops, "agent_runs.jsonl"))]
@@ -1078,5 +1079,205 @@ _orig_rg2 = _rv2.read_graphql
 _rv2.read_graphql = lambda t, q, v: {"nodes": [{"id": g, "status": "ACTIVE" if g.endswith("1001") else "DRAFT", "totalInventory": 10} for g in v["ids"]] + [None]}
 assert dr.read_price0(_p0db, "t") == {"rows": 1050, "buyable": ["1001"]}
 _rv2.read_graphql = _orig_rg2
+# telegram bot slice 1: founder-only auth, approve/reject via decide, double tap, kill confirm, bad names,
+# token never logged, offset replay, --whoami
+import os as _to
+import tempfile as _ttf
+import json as _tj
+import io as _tio
+import contextlib as _tcl
+import urllib.error as _tue
+from packages.core import telegram as _tg, approvals as _tap, agent as _tag
+import telegram_bot as tb
+_t_old = {k: _to.environ.get(k) for k in ("LUXELLA_OPS_DIR", "LUXELLA_TELEGRAM_KEYFILE", "LUXELLA_NTFY")}
+_to.environ["LUXELLA_OPS_DIR"] = _ttf.mkdtemp(); _to.environ["LUXELLA_NTFY"] = "0"
+_tkey = _to.path.join(_ttf.mkdtemp(), "telegram-bot.env")
+open(_tkey, "w").write("TELEGRAM_BOT_TOKEN=123:SECRET\nTELEGRAM_FOUNDER_CHAT_ID=42\n"); _to.chmod(_tkey, 0o600)
+_to.environ["LUXELLA_TELEGRAM_KEYFILE"] = _tkey
+_tcalls, _tupdates = [], []
+class _TResp:
+    def __init__(self, body): self.body = _tj.dumps(body).encode()
+    def __enter__(self): return self
+    def __exit__(self, *a): return False
+    def read(self, *a): return self.body
+def _tfake(req, timeout=15):
+    method = req.full_url.rsplit("/", 1)[1]
+    params = _tj.loads(req.data)
+    _tcalls.append((method, params))
+    if method == "getUpdates":
+        return _TResp({"ok": True, "result": [u for u in _tupdates if u["update_id"] >= params.get("offset", 0)]})
+    return _TResp({"ok": True, "result": True})
+_t_orig_urlopen = _tg.urllib.request.urlopen
+_tg.urllib.request.urlopen = _tfake
+assert _tg.config() == {"token": "123:SECRET", "chat_id": 42}
+def _msg(text, uid=42, chat=42, date=None):
+    return {"update_id": 1, "message": {"text": text, "date": date or __import__("time").time(),
+                                        "chat": {"id": chat, "type": "private"}, "from": {"id": uid}}}
+def _cb(data, uid=42):
+    return {"update_id": 2, "callback_query": {"id": "c1", "data": data, "from": {"id": uid},
+                                               "message": {"message_id": 7, "text": "card", "chat": {"id": 42}}}}
+# stranger: no reply, nothing decided, log shows only the id
+_tpid = _tap.propose("ops", "test-bot", "Telegram test", "low", "noop", {}, notify=False)
+with _tcl.redirect_stderr(_tio.StringIO()) as _terr:
+    tb.handle(_msg("/pending", uid=999, chat=999), 42)
+    tb.handle(_cb(f"a:{_tpid}", uid=999), 42)
+assert _tcalls == [] and _tap.get(_tpid)["status"] == "pending" and "ignored update from 999" in _terr.getvalue()
+# founder /pending -> card with buttons; approve -> decided by founder via telegram; second tap = no change
+tb.handle(_msg("/pending"), 42)
+assert _tcalls[-1][0] == "sendMessage" and _tcalls[-1][1]["reply_markup"]["inline_keyboard"][0][0]["callback_data"] == f"a:{_tpid}"
+tb.handle(_cb(f"a:{_tpid}"), 42)
+_trec = _tap.get(_tpid)
+assert _trec["status"] == "approved" and _trec["decided_by"] == "founder" and _trec["note"] == "telegram"
+assert any(c[0] == "editMessageText" for c in _tcalls)
+tb.handle(_cb(f"r:{_tpid}"), 42)
+assert _tap.get(_tpid)["status"] == "approved"                                  # double tap: no change
+_tpid2 = _tap.propose("ops", "test-bot", "x", "low", "noop", {}, notify=False)
+tb.handle(_cb(f"r:{_tpid2}"), 42)
+assert _tap.get(_tpid2)["status"] == "rejected"
+# kill: confirm needed, only registered names, bad names refused
+_tcalls.clear()
+tb.handle(_msg("/kill ALL"), 42)
+assert _tag.kill_reason("deal-finder") is None and _tcalls[-1][1]["reply_markup"]["inline_keyboard"][0][0]["callback_data"] == "k:ALL"
+tb.handle(_cb("k:ALL"), 42)
+assert _tag.kill_reason("deal-finder") == "kill file ALL"
+tb.handle(_msg("/unkill ALL"), 42)
+assert _tag.kill_reason("deal-finder") is None
+for _bad in ("../x", "nobody-bot", "deal-finder\nx"):
+    tb.handle(_msg(f"/kill {_bad}"), 42)
+    tb.handle(_cb(f"k:{_bad}"), 42)
+assert _tag.killed_agents() == []
+# stale command (2 h old) skipped
+_tcalls.clear()
+with _tcl.redirect_stderr(_tio.StringIO()):
+    tb.handle(_msg("/status", date=__import__("time").time() - 7200), 42)
+assert _tcalls == []
+# token never in logs/errors even when urlopen fails with the URL in the error
+def _tboom(req, timeout=15):
+    raise _tue.URLError(f"failed {req.full_url}")
+_tg.urllib.request.urlopen = _tboom
+try:
+    _tg.api("getMe", {}); raise AssertionError("should raise")
+except _tg.TelegramError as e:
+    assert "SECRET" not in str(e) and e.__cause__ is None and e.__suppress_context__
+assert _tg.send("hi") is False
+_tg.urllib.request.urlopen = _tfake
+# offset: saved after each update, replay = no-op
+_tupdates[:] = [_msg("/help") | {"update_id": 10}]
+_tcalls.clear()
+assert tb.run_once(42, poll_timeout=0) == 1 and tb.load_offset() == 11
+assert tb.run_once(42, poll_timeout=0) == 0
+# --whoami: exactly one private chat -> written once; existing id -> refuse; 2 chats -> nothing
+open(_tkey, "w").write("TELEGRAM_BOT_TOKEN=123:SECRET\n"); _to.chmod(_tkey, 0o600)
+_tupdates[:] = [_msg("/start", uid=77, chat=77) | {"update_id": 20}]
+with _tcl.redirect_stdout(_tio.StringIO()) as _tout:
+    assert tb.whoami() == 2 and _tg.config()["chat_id"] is None          # no --confirm: shows id, writes nothing
+    assert tb.whoami(confirm="78") == 2 and _tg.config()["chat_id"] is None
+    assert tb.whoami(confirm="77") == 0
+    assert tb.whoami(confirm="77") == 2                                   # already set: refuse
+assert _tg.config()["chat_id"] == 77 and "SECRET" not in _tout.getvalue() and oct(_to.stat(_tkey).st_mode)[-3:] == "600"
+open(_tkey, "w").write("TELEGRAM_BOT_TOKEN=123:SECRET\n"); _to.chmod(_tkey, 0o600)
+_tupdates[:] = [_msg("/start", uid=1, chat=1) | {"update_id": 21}, _msg("/start", uid=2, chat=2) | {"update_id": 22}]
+with _tcl.redirect_stdout(_tio.StringIO()):
+    assert tb.whoami() == 2
+assert _tg.config()["chat_id"] is None
+_tg.urllib.request.urlopen = _t_orig_urlopen
+for _k, _v in _t_old.items():
+    if _v is None:
+        _to.environ.pop(_k, None)
+    else:
+        _to.environ[_k] = _v
+# telegram slice 2: push = Telegram first (card+buttons), ntfy fallback; high priority both; callbacks <= 64 bytes
+_t2_old = {k: _to.environ.get(k) for k in ("LUXELLA_OPS_DIR", "LUXELLA_TELEGRAM_KEYFILE", "LUXELLA_NTFY", "LUXELLA_NTFY_TOPIC")}
+_to.environ.update({"LUXELLA_OPS_DIR": _ttf.mkdtemp(), "LUXELLA_TELEGRAM_KEYFILE": _tkey, "LUXELLA_NTFY": "1",
+                    "LUXELLA_NTFY_TOPIC": "t-topic"})
+open(_tkey, "w").write("TELEGRAM_BOT_TOKEN=123:SECRET\nTELEGRAM_FOUNDER_CHAT_ID=42\n"); _to.chmod(_tkey, 0o600)
+_ntfy_sent, _tcalls[:] = [], []
+_t2_tg_up = [True]
+def _t2fake(req, timeout=15):
+    if "api.telegram.org" in req.full_url:
+        if not _t2_tg_up[0]:
+            raise _tue.URLError("down")
+        return _tfake(req, timeout)
+    _ntfy_sent.append(req)
+    return _TResp({})
+_tg.urllib.request.urlopen = _t2fake
+_t2_ap_orig = _tap.urllib.request.urlopen
+_tap.urllib.request.urlopen = _t2fake
+assert _tap.push("T", "body") is True and len(_tcalls) == 1 and _ntfy_sent == []            # telegram ok -> no ntfy
+assert _tap.push("T", "body", priority="high") is True and len(_ntfy_sent) == 1             # high -> both
+_t2_tg_up[0] = False
+assert _tap.push("T", "body") is True and len(_ntfy_sent) == 2                               # telegram down -> ntfy
+_t2_tg_up[0] = True; _tcalls.clear()
+_t2pid = _tap.propose("ops", "test-bot", "Feature deal", "med", "shopify_add_to_deals",
+                      {"product_id": 7, "api_key": "sk-hidden"})
+_t2msg = [c for c in _tcalls if c[0] == "sendMessage"][-1][1]
+assert "sk-hidden" not in _t2msg["text"] and "[redacted]" in _t2msg["text"] and _t2pid in _t2msg["text"]
+assert [b["callback_data"] for b in _t2msg["reply_markup"]["inline_keyboard"][0]] == [f"a:{_t2pid}", f"r:{_t2pid}"]
+_t2top = [{"product": {"id": 10 ** 12 + i}} for i in range(10)]
+_t2btn = df.rating_buttons(_dnow.date(), _t2top)
+assert len(_t2btn) == 10 and all(len(cb.encode()) <= 64 for row in _t2btn for _, cb in row)
+assert _t2btn[0][0][1] == f"d:20261007:{10 ** 12}:+"
+assert all(len(f"a:{_tap.propose('ops', 'x', 'y', 'low', 't', {}, notify=False)}".encode()) <= 64 for _ in range(3))
+_tg.urllib.request.urlopen, _tap.urllib.request.urlopen = _t_orig_urlopen, _t2_ap_orig
+for _k, _v in _t2_old.items():
+    if _v is None:
+        _to.environ.pop(_k, None)
+    else:
+        _to.environ[_k] = _v
+# telegram slice 3: ratings saved only for products in that day's deal-finder run; latest wins; KPI summary
+_t3_old = {k: _to.environ.get(k) for k in ("LUXELLA_OPS_DIR", "LUXELLA_TELEGRAM_KEYFILE")}
+_to.environ.update({"LUXELLA_OPS_DIR": _ttf.mkdtemp(), "LUXELLA_TELEGRAM_KEYFILE": _tkey})
+open(_tkey, "w").write("TELEGRAM_BOT_TOKEN=123:SECRET\nTELEGRAM_FOUNDER_CHAT_ID=42\n"); _to.chmod(_tkey, 0o600)
+from packages.core import runs as _truns
+_t3day = __import__("datetime").datetime.now(__import__("datetime").timezone.utc).strftime("%Y%m%d")
+_truns.log_run("sourcing", "deal-finder", outputs={"top": [{"product_id": 101}, {"product_id": 102}]}, status="dry_run")
+assert df.record_rating(_t3day, 101, True) and df.record_rating(_t3day, 102, True)
+assert not df.record_rating(_t3day, 999, True) and not df.record_rating("20200101", 101, True)   # not shown that day
+assert df.ratings_summary() == (2, 100.0)
+df.record_rating(_t3day, 102, False)                                                            # re-tap: latest wins
+assert df.ratings_summary() == (2, 50.0)
+_tcalls.clear(); _tg.urllib.request.urlopen = _tfake
+tb.handle(_cb(f"d:{_t3day}:101:-"), 42)
+assert df.ratings_summary() == (2, 0.0) and _tcalls[-1][1]["text"] == "👎 saved"
+tb.handle(_cb(f"d:{_t3day}:555:+"), 42)
+assert _tcalls[-1][1]["text"] == "not a current deal" and df.ratings_summary()[0] == 2
+tb.handle(_cb(f"d:{_t3day}:101:x"), 42)
+assert _tcalls[-1][1]["text"] == "not a current deal"
+_tg.urllib.request.urlopen = _t_orig_urlopen
+for _k, _v in _t3_old.items():
+    if _v is None:
+        _to.environ.pop(_k, None)
+    else:
+        _to.environ[_k] = _v
+# telegram review fixes: crash-proof loop, non-ascii digits, notify-test without a record, key file perms
+_tf_old = {k: _to.environ.get(k) for k in ("LUXELLA_OPS_DIR", "LUXELLA_TELEGRAM_KEYFILE", "LUXELLA_NTFY")}
+_to.environ.update({"LUXELLA_OPS_DIR": _ttf.mkdtemp(), "LUXELLA_TELEGRAM_KEYFILE": _tkey, "LUXELLA_NTFY": "0"})
+open(_tkey, "w").write("TELEGRAM_BOT_TOKEN=123:SECRET\nTELEGRAM_FOUNDER_CHAT_ID=42\n"); _to.chmod(_tkey, 0o600)
+_tg.urllib.request.urlopen = _tfake
+_tupdates[:] = [_cb("d:20261007:\u00b2:+") | {"update_id": 30}, _msg("/help") | {"update_id": 31}]
+_t_orig_handle = tb.handle
+def _tcrash(u, f):
+    if u["update_id"] == 30:
+        raise ValueError("boom")
+    return _t_orig_handle(u, f)
+tb.handle = _tcrash
+with _tcl.redirect_stderr(_tio.StringIO()) as _terr2:
+    assert tb.run_once(42, poll_timeout=0) == 2
+tb.handle = _t_orig_handle
+assert tb.load_offset() == 32 and "update 30 failed: ValueError" in _terr2.getvalue() and "boom" not in _terr2.getvalue()
+_tcalls.clear()
+tb.handle(_cb("d:20261007:\u00b2:+"), 42)                                     # superscript digit: refused, no crash
+assert _tcalls[-1][1]["text"] == "not a current deal"
+assert _tap._notify("a-test", "Luxella phone test", "low") is True              # notify-test path: no KeyError
+_to.chmod(_tkey, 0o644)
+with _tcl.redirect_stderr(_tio.StringIO()):
+    assert _tg.config() is None                                                  # readable key file -> disabled
+_to.chmod(_tkey, 0o600)
+_tg.urllib.request.urlopen = _t_orig_urlopen
+for _k, _v in _tf_old.items():
+    if _v is None:
+        _to.environ.pop(_k, None)
+    else:
+        _to.environ[_k] = _v
 
 print("ok")
