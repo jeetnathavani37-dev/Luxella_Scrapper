@@ -8,7 +8,7 @@
 ## Next
 - [ ] Design system implemented (docs/DESIGN.md) and one storefront screen built
 - [ ] First agent with a full spec (agent-spec skill), eval set and logging
-- [ ] Daily catalog health report (out-of-stock drift, price report summary)
+- [x] Daily catalog health report (out-of-stock drift, price report summary) - `daily_report.py`, 2026-10-07
 
 ## Later
 - [ ] Concierge agent: drafts DM replies, founder approves

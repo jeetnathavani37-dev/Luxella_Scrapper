@@ -1,0 +1,10 @@
+# Repo copy = source of truth. Install: cp infra/systemd/luxella-daily-report.* /etc/systemd/system/ && systemctl daemon-reload
+# Timer ships DISABLED; founder OK ke baad: systemctl enable --now luxella-daily-report.timer
+[Unit]
+Description=Luxella daily report (read-only) -> ntfy
+After=network-online.target
+
+[Service]
+Type=oneshot
+WorkingDirectory=/root/Luxella_Scrapper
+ExecStart=/bin/bash -c 'set -a; . /root/.luxella.env; set +a; exec /root/Luxella_Scrapper/.venv/bin/python /root/Luxella_Scrapper/daily_report.py'
