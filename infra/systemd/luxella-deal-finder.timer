@@ -1,0 +1,9 @@
+[Unit]
+Description=Luxella deal finder at 07:45 IST (before the 08:00 daily report)
+
+[Timer]
+OnCalendar=*-*-* 02:15:00 UTC
+Persistent=true
+
+[Install]
+WantedBy=timers.target

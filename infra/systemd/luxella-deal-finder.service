@@ -1,0 +1,10 @@
+# Repo copy = source of truth. Install: cp infra/systemd/luxella-deal-finder.* /etc/systemd/system/ && systemctl daemon-reload
+# Timer ships DISABLED; founder OK ke baad: systemctl enable --now luxella-deal-finder.timer
+[Unit]
+Description=Luxella deal finder (sourcing, shadow) -> ntfy digest
+After=network-online.target
+
+[Service]
+Type=oneshot
+WorkingDirectory=/root/Luxella_Scrapper
+ExecStart=/bin/bash -c 'set -a; . /root/.luxella.env; set +a; exec /root/Luxella_Scrapper/.venv/bin/python /root/Luxella_Scrapper/deal_finder.py'
