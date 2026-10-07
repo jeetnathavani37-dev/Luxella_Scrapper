@@ -1,0 +1,28 @@
+name: Port probe (outside check)
+
+# Server hardening spec (docs/specs/2026-10-07-server-hardening.md), acceptance check 4:
+# from outside, only 22 may be open. Host comes from repo secret SERVER_HOST (masked in logs; the repo is public).
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Probe ports
+        env:
+          HOST: ${{ secrets.SERVER_HOST }}
+        run: |
+          if [ -z "$HOST" ]; then echo "::error::repo secret SERVER_HOST is not set"; exit 1; fi
+          bad=0
+          for p in 22 80 443 2026 3000 3002 3010 3060 5000 5432 5678 6006 6379 8000 8010 8080 8090 8095 9000 37700; do
+            if nc -z -w 3 "$HOST" "$p" 2>/dev/null; then state=open; else state=closed; fi
+            echo "port $p: $state"
+            if [ "$p" = 22 ] && [ "$state" != open ]; then echo "::error::ssh 22 not reachable"; bad=1; fi
+            if [ "$p" != 22 ] && [ "$state" = open ]; then echo "::error::port $p is open to the internet"; bad=1; fi
+          done
+          exit $bad

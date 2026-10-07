@@ -32,7 +32,7 @@ SNAP_FILE = "daily_report.jsonl"
 DEFAULT_TOKEN_FILE = "/root/.config/agent-keys/github-luxella-token"
 DEFAULT_REPO = "jeetnathavani37-dev/Luxella_Scrapper"
 RETRY_SLEEP = 10
-SOURCES = ("supabase", "shopify", "actions", "approvals")
+SOURCES = ("supabase", "shopify", "actions", "approvals", "ports")
 SHORT_MAX_LINES = 12
 
 
@@ -104,6 +104,9 @@ def build_report(data, history, now):
             bad.append(f"{name}: {_fmt(value)} (target <= {target})")
 
     price0, stale = _get(data, "supabase", "price0"), _get(data, "supabase", "stale3d")
+    public = _get(data, "ports", "public")
+    if public:  # server hardening spec: sirf :22 bahar khula ho; koi aur = app galti se internet pe
+        bad.append("public ports: " + ", ".join(public) + " (only 22 allowed)")
     if price0:  # live products price 0 pe = paise ka nuksaan (PR #15/#16), target 0
         bad.append(f"price 0 live: {_fmt(price0)} (target 0)")
     info = [f"stale > 3 d: {_fmt(stale)}"]
@@ -208,6 +211,31 @@ def read_actions(token_file, repo, since):
             "running": sum(r["conclusion"] is None for r in runs)}
 
 
+def public_listeners(ss_output):
+    """`ss -ltnH` ke local addresses mein se jo localhost pe nahi aur :22 nahi. Docker ufw bypass karta hai
+    (docker-proxy 0.0.0.0:<port> pe sunta hai) - aisa koi bhi port yahan dikh jaata hai."""
+    out = set()
+    for line in ss_output.splitlines():
+        parts = line.split()
+        if len(parts) < 4:
+            continue
+        host, _, port = parts[3].rpartition(":")
+        host = host.split("%")[0].strip("[]")
+        if port != "22" and not (host.startswith("127.") or host == "::1"):
+            out.add(f"{host or '*'}:{port}")
+    return sorted(out)
+
+
+def read_ports():
+    import subprocess
+    run = subprocess.run(["ss", "-ltnH"], capture_output=True, text=True, timeout=10, check=True)
+    if not any(line.split()[3].endswith(":22") for line in run.stdout.splitlines() if len(line.split()) > 3):
+        raise RuntimeError("no :22 listener seen - ss output not trustworthy")  # khaali output "saaf" na lage
+    # ponytail: TCP only, and relies on docker-proxy (default userland-proxy) showing published ports in ss;
+    # if daemon.json ever sets "userland-proxy": false, add a `docker ps` port check here.
+    return {"public": public_listeners(run.stdout)}
+
+
 def read_approvals():
     from packages.core.approvals import list_pending
     pending = list_pending()
@@ -245,7 +273,8 @@ def default_readers(now):
         return read_actions(os.environ.get("GITHUB_TOKEN_FILE", DEFAULT_TOKEN_FILE),
                             os.environ.get("GITHUB_REPOSITORY", DEFAULT_REPO), now - timedelta(days=1))
 
-    return {"supabase": supabase, "shopify": shopify, "actions": actions, "approvals": read_approvals}
+    return {"supabase": supabase, "shopify": shopify, "actions": actions, "approvals": read_approvals,
+            "ports": read_ports}
 
 
 def main(argv=None, readers=None, now=None):
