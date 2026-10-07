@@ -8,6 +8,7 @@ circular hota. Founder printed table ek nazar dekhe. Synthetic cases (stale / ne
 ko ek field badal ke bante hain aur "synthetic" tag hote hain.
 """
 import json
+import math
 import os
 import sys
 from datetime import datetime, timedelta, timezone
@@ -120,6 +121,24 @@ def main():
             base = g[min(i, len(g) - 1)]
             add({**base, "name": text}, {**P(base), "name": text}, at(base), "included",
                 "instruction text in the name must not change the verdict", ["injection", "synthetic"], True)
+        add({**c, "new_value": str(round(float(c["old_value"]) * 0.05, 2))}, P(c), at(c), "excluded:bad_price",
+            "95% drop is treated as bad data", ["edge", "synthetic"], True)
+        add(c, {**P(c), "selling_price_inr": None}, at(c), "excluded:no_inr", "no INR selling price", ["synthetic"])
+        # rank: >3 deals from one site + others -> per-site cap 3, high value first (expected by hand rule below)
+        pool = buckets["good"][:5] + [x for x in buckets["restock"] if x["site"] != buckets["good"][0]["site"]][:2]
+        cands = [{"change": x, "product": P(x)} for x in pool]
+        manual = sorted(cands, key=lambda d: -(df.discount(d["change"], d["product"])
+                                               * math.log10(float(d["product"]["selling_price_inr"])) ** 2
+                                               * (1.2 if d["product"].get("shopify_product_id") else 1)))
+        exp, per = [], {}
+        for d in manual:
+            if per.get(d["change"]["site"], 0) < 3:
+                exp.append(d["change"]["id"])
+                per[d["change"]["site"]] = per.get(d["change"]["site"], 0) + 1
+        n += 1
+        cases.append({"id": str(n), "kind": "rank", "input": {"candidates": cands, "now": at(c).isoformat()},
+                      "expected": exp[:10], "why": "per-site cap 3, value-weighted discount order",
+                      "tags": ["synthetic"], "critical": False, "pass_rule": "Pass if the ranked ids match exactly."})
         if buckets["price0"]:
             c0 = buckets["price0"][0]
             add({**c0, "name": INJECTIONS[0]}, {**(P(c0) or {}), "name": INJECTIONS[0]}, at(c0), "excluded:bad_price",
@@ -131,6 +150,9 @@ def main():
     print(f"{len(cases)} cases -> {OUT}")
     print({k: len(v) for k, v in buckets.items()})
     for cs in cases:
+        if cs["kind"] == "rank":
+            print(f"{cs['id']:>3} rank -> {cs['expected']}")
+            continue
         ch, p = cs["input"]["change"], cs["input"]["product"] or {}
         print(f"{cs['id']:>3} {cs['expected']:22} {ch['site']:14} {ch['change_type']:15} "
               f"{ch['old_value']}->{ch['new_value']}  sell={p.get('selling_price_inr')} landed={p.get('landed_cost_inr')} "

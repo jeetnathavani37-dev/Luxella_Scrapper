@@ -963,7 +963,15 @@ _fl = [{"id": 1, "site": "s", "product_url": "a", "change_type": "price_decrease
        {"id": 4, "site": "s", "product_url": "b", "change_type": "price_increase"},
        {"id": 5, "site": "s", "product_url": "b", "change_type": "back_in_stock"}]
 _lp, _flap = df.latest_per_product(_fl)
-assert sorted(c["id"] for c in _lp) == [2, 5] and _flap == {2}
+assert sorted(c["id"] for c in _lp) == [2, 5] and _flap == {2}   # restock 5 ke baad nahi tha
+_lp2, _flap2 = df.latest_per_product([{"id": 1, "site": "s", "product_url": "r", "change_type": "back_in_stock"},
+                                      {"id": 2, "site": "s", "product_url": "r", "change_type": "price_increase"}])
+assert _flap2 == set()                                              # restock + mehenga = flapping nahi
+_bad = [{"id": 9, "site": "s", "product_url": "x", "change_type": "price_decrease", "old_value": "100", "new_value": "60"}]
+_bt, _bx = df.find_deals(_bad, {("s", "x"): {**_dpr(), "scraped_at": "not-a-date"}}, _dnow)
+assert _bt == [] and _bx["bad_data"] == 1                          # ek kharab row run nahi girata
+_ex = _DC({f"reason_number_{i}": i + 1 for i in range(20)})
+assert not df.build_digest(_rk, _ex, 50, _dnow.date())[1].splitlines()[-1].endswith("_")
 # real eval set (departments/sourcing/evals/deal-finder.jsonl): CI niyam + eval_gate >= 90% + har critical pass
 from packages.core import eval_gate as _eg
 import tempfile as _dtf
@@ -981,7 +989,7 @@ import json as _dj
 import io as _dio
 import contextlib as _dcl
 from packages.core import approvals as _dap, agent as _dag
-_d_old_ops, _d_old_topic = _dos.environ.get("LUXELLA_OPS_DIR"), _dos.environ.get("LUXELLA_NTFY_TOPIC")
+_d_old_ops = _dos.environ.get("LUXELLA_OPS_DIR")
 _dops = _dtf2.mkdtemp(); _dos.environ["LUXELLA_OPS_DIR"] = _dops
 _d_orig_push, _dsent = _dap.push, []
 _dap.push = lambda title, body, priority="default", tags="": _dsent.append((title, body, priority)) or True
@@ -1000,7 +1008,7 @@ def _deal_world(n=12):
 _dw = _deal_world()
 with _dcl.redirect_stdout(_dio.StringIO()) as _dout:
     assert df.main(["--dry-run"], fetch=lambda: _dw, now=_dnow) == 0
-assert _dos.listdir(_dops) == [] and _dsent == [] and "would " in _dout.getvalue()     # dry-run: kuch nahi likha/bheja
+assert _dos.listdir(_dops) == [] and _dsent == [] and "would " in _dout.getvalue() and "kpis:" in _dout.getvalue()     # dry-run: kuch nahi likha/bheja
 with _dcl.redirect_stdout(_dio.StringIO()):
     df.main(["--no-push"], fetch=lambda: _dw, now=_dnow)
 _dr = _druns()[-1]

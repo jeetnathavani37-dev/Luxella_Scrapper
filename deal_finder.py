@@ -139,7 +139,8 @@ def proposals_for(change, product):
 
 
 def margin_estimate(change, product):
-    """Source price gira par Luxella ka INR price/landed abhi purane price pe (sync lag) -> margin andaaza hai."""
+    """Product ka current source price is change ke new price se alag = baad mein phir badla; INR numbers us naye
+    price ke hain (db._prepare price ke saath INR bhi recompute karta hai - sync lag nahi)."""
     if change["change_type"] != "price_decrease":
         return False
     try:
@@ -156,8 +157,9 @@ def _line(i, c):
     what = (f"-{discount(ch, p):.0f}% {ch['old_value']}->{ch['new_value']}"
             if ch["change_type"] == "price_decrease" else "restock")
     live = "live" if p.get("shopify_product_id") else "not listed"
-    est = " (est)" if margin_estimate(ch, p) else ""
-    return f"{i}. {ch.get('site')}: {name} | {what} | Rs{sell:,.0f} | margin {margin}%{est} | {live}"
+    est = " (price changed since)" if margin_estimate(ch, p) else ""
+    name = name.replace(" | ", " - ")
+    return f"{i}. {ch.get('site')}: {name} · {what} · Rs{sell:,.0f} · markup {margin}%{est} · {live}"
 
 
 def build_digest(top, excluded, n_changes, today):
@@ -171,7 +173,7 @@ def build_digest(top, excluded, n_changes, today):
             f"excluded: {ex or '-'}"]
     phone = [f"{head}: top {min(len(top), PHONE_TOP)} of {len(top)}",
              *[_line(i, c) for i, c in enumerate(top[:PHONE_TOP], 1)],
-             f"excluded: {ex[:120] or '-'}"]
+             f"excluded: {(ex if len(ex) <= 120 else ex[:ex.rfind(', ', 0, 120)]) or '-'}"]  # poore reason pe kaato
     return "\n".join(full), "\n".join(phone[:12])
 
 
@@ -216,7 +218,8 @@ def latest_per_product(changes):
             rises[key] = c["id"]
         else:
             last[key] = c
-    flapping = {c["id"] for key, c in last.items() if rises.get(key, 0) > c["id"]}
+    flapping = {c["id"] for key, c in last.items()
+                if c["change_type"] == "price_decrease" and rises.get(key, 0) > c["id"]}
     return list(last.values()), flapping
 
 
@@ -224,13 +227,19 @@ def find_deals(changes, products, now):
     """-> (ranked top list, excluded Counter). products = fetch_products ka result."""
     rows, flapping = latest_per_product(changes)
     excluded, cands = Counter(), []
+    older = sum(c["change_type"] != "price_increase" for c in changes) - len(rows)
+    if older:
+        excluded["older_change"] = older  # same product, newer change wins
     for c in rows:
-        ok, why = classify(c, products.get((c["site"], c["product_url"])), flapping, now)
+        try:
+            ok, why = classify(c, products.get((c["site"], c["product_url"])), flapping, now)
+            if ok:
+                p = products[(c["site"], c["product_url"])]
+                cands.append({"change": c, "product": p, "score": score(c, p)})
+        except (TypeError, ValueError):  # ek kharab row poora run na giraye
+            ok, why = False, "bad_data"
         if not ok:
             excluded[why] += 1
-            continue
-        p = products[(c["site"], c["product_url"])]
-        cands.append({"change": c, "product": p, "score": score(c, p)})
     return rank(cands), excluded
 
 
@@ -321,21 +330,21 @@ def main(argv=None, fetch=None, now=None):
             print(full + "\n---\n" + phone)
             for c in top:
                 propose(ag, c)
+            drops = [d for d in map(_deal_out, top) if d["change"] == "price_decrease"]
+            kpis = {"new finds": len(top), "price drops caught": len(drops),
+                    "buys proposed": sum(w["action"] == "propose_buy" for w in ag.writes),
+                    "average discount": round(sum(d["discount_pct"] for d in drops) / len(drops), 1) if drops else None}
             if args.dry_run:
                 for w in ag.writes:
                     print(f"would {w['action']}: {w['args']}")
+                print("kpis:", kpis)
                 return 0
             pushed = False
             if not args.no_push:
                 from packages.core.approvals import push
                 pushed = push(f"Luxella deals {now.date().isoformat()}", phone, tags="moneybag")
-            drops = [d for d in map(_deal_out, top) if d["change"] == "price_decrease"]
             ag.outputs = {"changes_24h": len(changes), "top": [_deal_out(c) for c in top], "excluded": dict(excluded),
-                          "kpis": {"new finds": len(top), "price drops caught": len(drops),
-                                   "buys proposed": sum(w["action"] == "propose_buy" for w in ag.writes),
-                                   "average discount": round(sum(d["discount_pct"] for d in drops) / len(drops), 1)
-                                   if drops else None},
-                          "pushed": pushed}
+                          "kpis": kpis, "pushed": pushed}
             if not changes or (not args.no_push and not pushed):
                 ag.status = "partial"
     except AgentStopped:  # kill at start: log + alert already sent
