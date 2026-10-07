@@ -555,5 +555,51 @@ _hist.append({"id": "d0", "at": "2026-09-30T02:30:00", "kpis": {"products live":
 assert dr.seven_day_avg(_hist, "products live", _date(2026, 10, 7)) == 35                       # None din chhoda
 _hist.append({"id": "dx", "at": "2026-10-07T01:00:00", "kpis": {"products live": 999}})         # aaj gina nahi
 assert dr.seven_day_avg(_hist, "products live", _date(2026, 10, 7)) == 35
+# daily_report main(): --dry-run kuch nahi likhta/bhejta, --no-push log likhta par push nahi, token file gayab -> partial
+import os as _os2
+import tempfile as _tf2
+import json as _js2
+import packages.core.approvals as _ap
+_ops = _tf2.mkdtemp(); _old_ops = _os2.environ.get("LUXELLA_OPS_DIR"); _os2.environ["LUXELLA_OPS_DIR"] = _ops
+_sent = []
+_orig_urlopen = _ap.urllib.request.urlopen
+class _Resp:
+    def read(self): return b""
+_ap.urllib.request.urlopen = lambda req, timeout=10: (_sent.append(req), _Resp())[1]
+_os2.environ["LUXELLA_NTFY_TOPIC"] = "test-topic"
+_fake = {"supabase": lambda: _full["supabase"], "shopify": lambda: _full["shopify"],
+         "actions": lambda: _full["actions"], "approvals": lambda: {"count": 0, "top": []}}
+assert dr.main(["--dry-run"], readers=_fake, now=_now) == 0
+assert _os2.listdir(_ops) == [] and _sent == []                                   # dry-run: kuch nahi
+assert dr.main(["--no-push"], readers=_fake, now=_now) == 0
+assert sorted(_os2.listdir(_ops)) == ["agent_runs.jsonl", "daily_report.jsonl"] and _sent == []
+dr.RETRY_SLEEP = 0
+_flaky_n = []
+_fake_flaky = {**_fake, "supabase": lambda: _full["supabase"] if _flaky_n.append(1) or len(_flaky_n) > 1 else 1 / 0}
+assert dr.gather(_now, _fake_flaky)["supabase"] == _full["supabase"] and len(_flaky_n) == 2  # ek retry
+_fake_bad = {**_fake, "actions": lambda: dr.read_actions("/nonexistent/token", "o/r", _now)}  # token file gayab
+assert dr.main([], readers=_fake_bad, now=_now) == 0 and len(_sent) == 1
+_runs = [_js2.loads(x) for x in open(_os2.path.join(_ops, "agent_runs.jsonl"))]
+assert [r["status"] for r in _runs] == ["ok", "partial"] and _runs[-1]["outputs"]["pushed"] is True
+_body = _sent[0].data.decode()
+assert "actions: " + dr.NA in _body and "Bearer" not in _body and "/nonexistent" not in _body
+assert _sent[0].get_header("Priority") == "default" and _sent[0].full_url.endswith("/test-topic")
+_ap.urllib.request.urlopen = _orig_urlopen
+del _os2.environ["LUXELLA_NTFY_TOPIC"]
+if _old_ops is None:
+    del _os2.environ["LUXELLA_OPS_DIR"]
+else:
+    _os2.environ["LUXELLA_OPS_DIR"] = _old_ops
+# read_shopify: count EXACT nahi (10k cap) -> fail, taaki galat number na jaaye
+import repair_variant_stock as _rv2
+_orig_rg = _rv2.read_graphql
+_rv2.read_graphql = lambda t, q, v: {"active": {"count": 10000, "precision": "AT_LEAST"}, "oos_live": {"count": 1, "precision": "EXACT"}}
+try:
+    dr.read_shopify("t"); raise AssertionError("AT_LEAST count accept nahi hona chahiye")
+except RuntimeError:
+    pass
+_rv2.read_graphql = lambda t, q, v: {"active": {"count": 52650, "precision": "EXACT"}, "oos_live": {"count": 7, "precision": "EXACT"}}
+assert dr.read_shopify("t") == {"active": 52650, "oos_live": 7} and "limit: null" in dr.SHOPIFY_COUNTS
+_rv2.read_graphql = _orig_rg
 
 print("ok")

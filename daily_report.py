@@ -5,7 +5,10 @@ Roz subah ki Luxella health report (spec: docs/specs/2026-10-07-daily-report-age
 Read-only: Supabase/Shopify/GitHub sirf padhta hai, kahin likhta nahi. Koi LLM nahi - har number
 isi run ki query se (kpi-report skill).
 
-Slice 1: report ka hisaab (status, 7-day avg, text, phone message). Readers + main() slice 2 mein.
+Usage (server; env ~/.luxella.env se, systemd unit jaisa):
+    python daily_report.py --dry-run   # sirf print - na ntfy, na snapshot, na log
+    python daily_report.py --no-push   # snapshot + agent_runs log, ntfy nahi
+    python daily_report.py             # sab + phone pe ntfy
 
 `data` ka shape - har source ya to dict ya None (= source missing, line pe "n/a"):
     supabase:  {pushed, live, oos, price0, stale3d, scraped_24h, changes_24h}
@@ -14,10 +17,20 @@ Slice 1: report ka hisaab (status, 7-day avg, text, phone message). Readers + ma
     approvals: {count, top: [str]}
     at:        {source: iso time}  (Data line ke liye)
 """
+import argparse
+import json
+import os
+import sys
+import time
+import urllib.request
 from dataclasses import dataclass
-from datetime import date, datetime, timedelta
+from datetime import date, datetime, timedelta, timezone
 
 NA = "n/a (source missing)"
+SNAP_FILE = "daily_report.jsonl"
+DEFAULT_TOKEN_FILE = "/root/.config/agent-keys/github-luxella-token"
+DEFAULT_REPO = "jeetnathavani37-dev/Luxella_Scrapper"
+RETRY_SLEEP = 10
 SOURCES = ("supabase", "shopify", "actions", "approvals")
 SHORT_MAX_LINES = 12
 
@@ -133,10 +146,129 @@ def short_message(today, bad, failed, info, missing, appr):
     return "\n".join(lines)
 
 
-if __name__ == "__main__":  # slice 2: readers + flags
-    sample = {"supabase": {"pushed": 49518, "live": 31306, "oos": 18212, "price0": 237, "stale3d": 9875,
-                           "scraped_24h": 46025, "changes_24h": 1638},
-              "shopify": None, "actions": {"failed": [], "cancelled": 7, "success": 20, "running": 1},
-              "approvals": {"count": 0, "top": []}, "at": {}}
-    r = build_report(sample, [], datetime.now())
-    print(r.text, "\n---\n" + r.short)
+# ---------- readers (sirf padhna) ----------
+
+def read_supabase(client, now):
+    """Exact counts; ORDER BY nahi (scraped_at/changed_at pe index nahi - safe-writes)."""
+    d1, d3 = (now - timedelta(days=1)).isoformat(), (now - timedelta(days=3)).isoformat()
+
+    def n(q):
+        return q.execute().count
+
+    def products():
+        return client.table("products").select("id", count="exact").limit(1)
+
+    def pushed():
+        return products().not_.is_("shopify_product_id", "null")
+
+    return {"pushed": n(pushed()), "live": n(pushed().eq("in_stock", True)),
+            "oos": n(pushed().eq("in_stock", False)), "price0": n(pushed().or_("price.is.null,price.eq.0")),
+            "stale3d": n(pushed().lt("scraped_at", d3)), "scraped_24h": n(products().gt("scraped_at", d1)),
+            "changes_24h": n(client.table("product_changes").select("id", count="exact").limit(1)
+                             .gt("changed_at", d1))}
+
+
+SHOPIFY_COUNTS = """{ active: productsCount(query: "status:active", limit: null) { count precision }
+  oos_live: productsCount(query: "status:active inventory_total:<=0", limit: null) { count precision } }"""
+
+
+def read_shopify(token):
+    """limit: null - warna count 10,000 pe ruk jaata hai (live ~50k). Read retry = PR #33."""
+    from repair_variant_stock import read_graphql
+    data = read_graphql(token, SHOPIFY_COUNTS, {})
+    if any(data[k]["precision"] != "EXACT" for k in ("active", "oos_live")):
+        raise RuntimeError("productsCount not EXACT")
+    return {"active": data["active"]["count"], "oos_live": data["oos_live"]["count"]}
+
+
+def read_actions(token_file, repo, since):
+    """Pichhle 24 h ke runs: failed (naam + link), cancelled, success, running. Token kabhi print nahi."""
+    with open(token_file) as f:
+        token = f.read().strip()
+    runs, page = [], 1
+    while True:
+        url = (f"https://api.github.com/repos/{repo}/actions/runs?per_page=100&page={page}"
+               f"&created=>={since.strftime('%Y-%m-%dT%H:%M:%SZ')}")
+        req = urllib.request.Request(url, headers={"Authorization": f"Bearer {token}",
+                                                   "Accept": "application/vnd.github+json"})
+        with urllib.request.urlopen(req, timeout=30) as r:
+            batch = json.load(r)["workflow_runs"]
+        runs += batch
+        if len(batch) < 100 or page == 5:  # ponytail: 500 runs/din cap, abhi ~32
+            break
+        page += 1
+    return {"failed": [{"name": r["name"], "url": r["html_url"]} for r in runs if r["conclusion"] == "failure"],
+            "cancelled": sum(r["conclusion"] == "cancelled" for r in runs),
+            "success": sum(r["conclusion"] == "success" for r in runs),
+            "running": sum(r["conclusion"] is None for r in runs)}
+
+
+def read_approvals():
+    from packages.core.approvals import list_pending
+    pending = list_pending()
+    return {"count": len(pending), "top": [f"{p['id']} {str(p.get('action', ''))[:60]}" for p in pending[:3]]}
+
+
+def gather(now, readers):
+    """Har source alag; ek fail ho to None (report phir bhi jaati hai). Error ka sirf type log - values nahi."""
+    data, at = {}, {}
+    for name, fn in readers.items():
+        data[name] = None
+        for attempt in (1, 2):  # ek baar dobara: 2026-10-07 dry-run mein Supabase count ek baar APIError, phir theek
+            try:
+                data[name] = fn()
+                at[name] = datetime.now(timezone.utc).strftime("%H:%M UTC")
+                break
+            except Exception as e:
+                print(f"[daily_report] {name} failed ({attempt}/2): {type(e).__name__}", file=sys.stderr)
+                if attempt == 1:
+                    time.sleep(RETRY_SLEEP)
+    data["at"] = at
+    return data
+
+
+def default_readers(now):
+    def supabase():
+        import shopify_sync
+        return read_supabase(shopify_sync.get_supabase(), now)
+
+    def shopify():
+        import shopify_sync
+        return read_shopify(shopify_sync.get_access_token())
+
+    def actions():
+        return read_actions(os.environ.get("GITHUB_TOKEN_FILE", DEFAULT_TOKEN_FILE),
+                            os.environ.get("GITHUB_REPOSITORY", DEFAULT_REPO), now - timedelta(days=1))
+
+    return {"supabase": supabase, "shopify": shopify, "actions": actions, "approvals": read_approvals}
+
+
+def main(argv=None, readers=None, now=None):
+    ap = argparse.ArgumentParser(description="Luxella daily report (read-only)")
+    ap.add_argument("--dry-run", action="store_true", help="sirf print: na ntfy, na snapshot, na log")
+    ap.add_argument("--no-push", action="store_true", help="snapshot + log, ntfy nahi")
+    args = ap.parse_args(argv)
+    from packages.core import _store
+    now = now or datetime.now(timezone.utc)
+    t0 = time.time()
+    data = gather(now, readers or default_readers(now))
+    report = build_report(data, _store.read_all(_store.path_for(SNAP_FILE)), now)
+    print(report.text + "\n---\n" + report.short)
+    if args.dry_run:
+        return 0
+    _store.append(_store.path_for(SNAP_FILE), report.snapshot)
+    pushed = False
+    if not args.no_push:
+        from packages.core.approvals import push
+        pushed = push(f"Luxella daily {now.date().isoformat()}", report.short, priority=report.priority,
+                      tags="warning" if report.priority == "high" else "white_check_mark")
+    from packages.core.runs import log_run
+    log_run("catalog", "daily-report", inputs={"flags": [a for a in ("no_push",) if getattr(args, a)]},
+            tool_calls=[s for s in readers or default_readers(now)],
+            outputs={"kpis": report.snapshot["kpis"], "pushed": pushed}, duration=round(time.time() - t0, 1),
+            status=report.status)
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())

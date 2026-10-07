@@ -131,22 +131,29 @@ def _topic():
     return t
 
 
-def _notify(pid, action, risk):
+def push(title, body, priority="default", tags=""):
+    """ntfy push (approvals + daily report). Kabhi raise nahi karta - push fail ho to bas False."""
     if os.environ.get("LUXELLA_NTFY", "1") == "0":
         return False
     topic = _topic()
     if not topic:
-        print("[approvals] ntfy topic not set - no push", file=sys.stderr)
+        print("[ntfy] topic not set - no push", file=sys.stderr)
         return False
     server = os.environ.get("LUXELLA_NTFY_SERVER", "https://ntfy.sh").rstrip("/")
-    req = urllib.request.Request(f"{server}/{topic}", data=f"{action[:120]} [{pid}]".encode(), method="POST",
-                                 headers={"Title": f"Luxella approval needed ({risk})", "Tags": "inbox_tray"})
+    headers = {"Title": title, "Priority": priority}
+    if tags:
+        headers["Tags"] = tags
+    req = urllib.request.Request(f"{server}/{topic}", data=body.encode(), method="POST", headers=headers)
     try:
         urllib.request.urlopen(req, timeout=10).read()
         return True
-    except Exception as e:  # never block a proposal on a failed push
-        print(f"[approvals] ntfy push failed: {type(e).__name__}", file=sys.stderr)
+    except Exception as e:  # never block the caller on a failed push
+        print(f"[ntfy] push failed: {type(e).__name__}", file=sys.stderr)
         return False
+
+
+def _notify(pid, action, risk):
+    return push(f"Luxella approval needed ({risk})", f"{action[:120]} [{pid}]", tags="inbox_tray")
 
 
 def _selftest():
