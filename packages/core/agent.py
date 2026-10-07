@@ -224,7 +224,7 @@ class Agent:
         self.writes.append(entry)  # pehle gino
         try:
             result = self._tools[tool](**args)
-        except Exception as e:
+        except BaseException as e:  # Ctrl-C / SystemExit bhi: half-applied action approved na rahe
             # proposal band: dobara chalana = founder ka naya approval (half-applied money/stock action repeat na ho)
             approvals.mark_executed(pid, {"ok": False, "error": type(e).__name__})
             raise

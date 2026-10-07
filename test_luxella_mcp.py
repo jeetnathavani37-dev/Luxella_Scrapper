@@ -813,10 +813,12 @@ with _ag.Agent("t", "x5-bot", mode="shadow", write_budget=3) as a:
         pass
 # CI: registry= / record=False sirf tests aur daily_report mein (warna gate bypass)
 import glob as _aglob
-_bypass = [f for f in _aglob.glob("**/*.py", recursive=True)
+_arepo = _ao.path.dirname(_ao.path.abspath(__file__))
+_bypass = [f for f in (_ao.path.relpath(x, _arepo) for x in _aglob.glob(_ao.path.join(_arepo, "**/*.py"), recursive=True))
            if not f.startswith((".venv", "node_modules")) and f not in ("test_luxella_mcp.py", "daily_report.py", "packages/core/agent.py")
            and ("registry=" in open(f, errors="ignore").read() or "record=False" in open(f, errors="ignore").read())]
 assert _bypass == [], f"Agent gate bypass flags outside allowed files: {_bypass}"
+assert len(_aglob.glob(_ao.path.join(_arepo, "**/*.py"), recursive=True)) > 10  # sahi tree scan hua
 # registry gate: code khud ko promote nahi kar sakta
 for _bad in [dict(name="ghost", mode="approve"), dict(name="appr-bot", mode="auto", auto_actions=["set_price"]),
              dict(name="auto-bot", mode="auto", write_budget=50, auto_actions=["set_price"]),
