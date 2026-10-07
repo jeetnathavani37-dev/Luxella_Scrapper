@@ -131,8 +131,17 @@ def _topic():
     return t
 
 
-def push(title, body, priority="default", tags=""):
-    """ntfy push (approvals + daily report). Kabhi raise nahi karta - push fail ho to bas False."""
+def push(title, body, priority="default", tags="", *, card=None, buttons=None):
+    """Founder ko notification: pehle Telegram (card + buttons, agar configured), warna/aur ntfy (sirf body).
+    High priority (agent failed/killed/budget) dono pe jaata hai. Kabhi raise nahi karta - fail = False."""
+    from packages.core import telegram
+    tg_ok = telegram.send(card or f"{title}\n{body}", buttons)
+    if tg_ok and priority != "high":
+        return True
+    return _ntfy(title, body, priority, tags) or tg_ok
+
+
+def _ntfy(title, body, priority, tags):
     if os.environ.get("LUXELLA_NTFY", "1") == "0":
         return False
     topic = _topic()
@@ -152,8 +161,20 @@ def push(title, body, priority="default", tags=""):
         return False
 
 
+def proposal_card(rec):
+    from packages.core.agent import redact  # lazy: agent imports approvals
+    args = ", ".join(f"{k}={str(v)[:80]}" for k, v in redact(rec.get("args") or {}).items())
+    return (f"Approval needed ({rec.get('risk')})\n{rec.get('agent')}: {str(rec.get('action'))[:300]}\n"
+            f"tool: {rec.get('tool')}\nargs: {args or '-'}\nid: {rec['id']}")
+
+
+def approval_buttons(pid):
+    return [[("✅ Approve", f"a:{pid}"), ("❌ Reject", f"r:{pid}")]]
+
+
 def _notify(pid, action, risk):
-    return push(f"Luxella approval needed ({risk})", f"{action[:120]} [{pid}]", tags="inbox_tray")
+    return push(f"Luxella approval needed ({risk})", f"{action[:120]} [{pid}]", tags="inbox_tray",
+                card=proposal_card(get(pid)), buttons=approval_buttons(pid))
 
 
 def _selftest():
@@ -164,6 +185,7 @@ def _selftest():
     urllib.request.urlopen = no_network
     os.environ["LUXELLA_OPS_DIR"] = tempfile.mkdtemp()
     os.environ["LUXELLA_NTFY"] = "0"
+    os.environ["LUXELLA_TELEGRAM"] = "0"
 
     args = {"items": ["i1", "i2"], "qty": 0}
     pid = propose("catalog", "curator", "Set 2 sizes to 0", "med", "inventorySetQuantities", args)

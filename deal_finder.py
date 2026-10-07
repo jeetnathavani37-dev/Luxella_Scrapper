@@ -138,6 +138,13 @@ def proposals_for(change, product):
     return acts
 
 
+def rating_buttons(day, top):
+    """Har deal pe 👍/👎 (callback <= 64 bytes): d:<YYYYMMDD>:<product_id>:+|-  - bot slice 3 save karta hai."""
+    tag = day.strftime("%Y%m%d")
+    return [[(f"{i}. 👍", f"d:{tag}:{c['product']['id']}:+"), (f"{i}. 👎", f"d:{tag}:{c['product']['id']}:-")]
+            for i, c in enumerate(top, 1)]
+
+
 def margin_estimate(change, product):
     """Product ka current source price is change ke new price se alag = baad mein phir badla; INR numbers us naye
     price ke hain (db._prepare price ke saath INR bhi recompute karta hai - sync lag nahi)."""
@@ -342,7 +349,8 @@ def main(argv=None, fetch=None, now=None):
             pushed = False
             if not args.no_push:
                 from packages.core.approvals import push
-                pushed = push(f"Luxella deals {now.date().isoformat()}", phone, tags="moneybag")
+                pushed = push(f"Luxella deals {now.date().isoformat()}", phone, tags="moneybag", card=full,
+                              buttons=rating_buttons(now.date(), top))
             ag.outputs = {"changes_24h": len(changes), "top": [_deal_out(c) for c in top], "excluded": dict(excluded),
                           "kpis": kpis, "pushed": pushed}
             if not changes or (not args.no_push and not pushed):

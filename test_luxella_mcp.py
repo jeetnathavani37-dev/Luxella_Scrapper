@@ -666,7 +666,7 @@ _a_old_ops, _a_old_kill = _ao.environ.get("LUXELLA_OPS_DIR"), _ao.environ.pop("L
 _ao.environ["LUXELLA_OPS_DIR"] = _atf.mkdtemp()
 _a_orig_push, _a_orig_notify = _ag.approvals.push, _aap._notify
 _apush = []
-_ag.approvals.push = lambda title, body, priority="default", tags="": _apush.append((title, body, priority)) or True
+_ag.approvals.push = lambda title, body, priority="default", tags="", **_k: _apush.append((title, body, priority)) or True
 _aap._notify = lambda *a: False
 def _aruns():
     return [_aj.loads(x) for x in open(_ao.path.join(_ao.environ["LUXELLA_OPS_DIR"], "agent_runs.jsonl"))]
@@ -995,7 +995,7 @@ from packages.core import approvals as _dap, agent as _dag
 _d_old_ops = _dos.environ.get("LUXELLA_OPS_DIR")
 _dops = _dtf2.mkdtemp(); _dos.environ["LUXELLA_OPS_DIR"] = _dops
 _d_orig_push, _dsent = _dap.push, []
-_dap.push = lambda title, body, priority="default", tags="": _dsent.append((title, body, priority)) or True
+_dap.push = lambda title, body, priority="default", tags="", **_k: _dsent.append((title, body, priority)) or True
 _d_orig_sleep = dr.RETRY_SLEEP; dr.RETRY_SLEEP = 0
 def _druns():
     return [_dj.loads(x) for x in open(_dos.path.join(_dops, "agent_runs.jsonl"))]
@@ -1180,6 +1180,44 @@ with _tcl.redirect_stdout(_tio.StringIO()):
 assert _tg.config()["chat_id"] is None
 _tg.urllib.request.urlopen = _t_orig_urlopen
 for _k, _v in _t_old.items():
+    if _v is None:
+        _to.environ.pop(_k, None)
+    else:
+        _to.environ[_k] = _v
+# telegram slice 2: push = Telegram first (card+buttons), ntfy fallback; high priority both; callbacks <= 64 bytes
+_t2_old = {k: _to.environ.get(k) for k in ("LUXELLA_OPS_DIR", "LUXELLA_TELEGRAM_KEYFILE", "LUXELLA_NTFY", "LUXELLA_NTFY_TOPIC")}
+_to.environ.update({"LUXELLA_OPS_DIR": _ttf.mkdtemp(), "LUXELLA_TELEGRAM_KEYFILE": _tkey, "LUXELLA_NTFY": "1",
+                    "LUXELLA_NTFY_TOPIC": "t-topic"})
+open(_tkey, "w").write("TELEGRAM_BOT_TOKEN=123:SECRET\nTELEGRAM_FOUNDER_CHAT_ID=42\n")
+_ntfy_sent, _tcalls[:] = [], []
+_t2_tg_up = [True]
+def _t2fake(req, timeout=15):
+    if "api.telegram.org" in req.full_url:
+        if not _t2_tg_up[0]:
+            raise _tue.URLError("down")
+        return _tfake(req, timeout)
+    _ntfy_sent.append(req)
+    return _TResp({})
+_tg.urllib.request.urlopen = _t2fake
+_t2_ap_orig = _tap.urllib.request.urlopen
+_tap.urllib.request.urlopen = _t2fake
+assert _tap.push("T", "body") is True and len(_tcalls) == 1 and _ntfy_sent == []            # telegram ok -> no ntfy
+assert _tap.push("T", "body", priority="high") is True and len(_ntfy_sent) == 1             # high -> both
+_t2_tg_up[0] = False
+assert _tap.push("T", "body") is True and len(_ntfy_sent) == 2                               # telegram down -> ntfy
+_t2_tg_up[0] = True; _tcalls.clear()
+_t2pid = _tap.propose("ops", "test-bot", "Feature deal", "med", "shopify_add_to_deals",
+                      {"product_id": 7, "api_key": "sk-hidden"})
+_t2msg = [c for c in _tcalls if c[0] == "sendMessage"][-1][1]
+assert "sk-hidden" not in _t2msg["text"] and "[redacted]" in _t2msg["text"] and _t2pid in _t2msg["text"]
+assert [b["callback_data"] for b in _t2msg["reply_markup"]["inline_keyboard"][0]] == [f"a:{_t2pid}", f"r:{_t2pid}"]
+_t2top = [{"product": {"id": 10 ** 12 + i}} for i in range(10)]
+_t2btn = df.rating_buttons(_dnow.date(), _t2top)
+assert len(_t2btn) == 10 and all(len(cb.encode()) <= 64 for row in _t2btn for _, cb in row)
+assert _t2btn[0][0][1] == f"d:20261007:{10 ** 12}:+"
+assert all(len(f"a:{_tap.propose('ops', 'x', 'y', 'low', 't', {}, notify=False)}".encode()) <= 64 for _ in range(3))
+_tg.urllib.request.urlopen, _tap.urllib.request.urlopen = _t_orig_urlopen, _t2_ap_orig
+for _k, _v in _t2_old.items():
     if _v is None:
         _to.environ.pop(_k, None)
     else:

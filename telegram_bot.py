@@ -50,16 +50,6 @@ def kill_names():
         return {"ALL"}
 
 
-def proposal_card(rec):
-    args = ", ".join(f"{k}={str(v)[:80]}" for k, v in agent.redact(rec.get("args") or {}).items())
-    return (f"Approval needed ({rec.get('risk')})\n{rec.get('agent')}: {str(rec.get('action'))[:300]}\n"
-            f"tool: {rec.get('tool')}\nargs: {args or '-'}\nid: {rec['id']}")
-
-
-def approval_buttons(pid):
-    return [[("✅ Approve", f"a:{pid}"), ("❌ Reject", f"r:{pid}")]]
-
-
 def on_command(text, founder):
     parts = text.split()
     cmd, arg = parts[0].split("@")[0].lower(), (parts[1] if len(parts) > 1 else "")
@@ -70,7 +60,7 @@ def on_command(text, founder):
         if not pending:
             telegram.send("No pending approvals.", chat_id=founder)
         for rec in pending[:10]:
-            telegram.send(proposal_card(rec), approval_buttons(rec["id"]), chat_id=founder)
+            telegram.send(approvals.proposal_card(rec), approvals.approval_buttons(rec["id"]), chat_id=founder)
     elif cmd in ("/kill", "/unkill"):
         if arg not in kill_names() or len(arg) > 60:
             telegram.send(f"Unknown agent. Use one of: {', '.join(sorted(kill_names()))}", chat_id=founder)
