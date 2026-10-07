@@ -23,13 +23,14 @@ from packages.core import _store, approvals, runs
 
 MODES = ("read_only", "shadow", "approve", "auto")
 STOP_STATUSES = {"failed", "killed", "budget_exceeded"}
-_SECRET_KEY = re.compile(r"token|key|secret|password", re.I)
-_SECRET_PREFIXES = ("shpat_", "shpss_", "Bearer ", "eyJ", "ghp_", "github_pat_", "sk-")
+_SECRET_KEY = re.compile(r"token|api[_-]?key|secret|password|authorization|credential", re.I)  # plain "key" (metafield) ok
+_SECRET_PREFIXES = ("shpat_", "shpss_", "Bearer ", "eyJ", "ghp_", "github_pat_", "sk-", "sb_secret_", "fc-", "AIza")
+_SECRET_INSIDE = re.compile(r"Bearer \S|[?&](token|key|secret|access_token)=", re.I)
 _FENCE_OPEN, _FENCE_CLOSE = "<<<UNTRUSTED_DATA", "<<<END_UNTRUSTED_DATA>>>"
 REPO = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 REGISTRY = os.path.join(REPO, "agents.json")
 MAX_BUDGET, MIN_CASES, MIN_TAGGED = 200, 20, 3
-_NAME = re.compile(r"^[a-z0-9-]+$|^ALL$")
+_NAME = re.compile(r"[a-z0-9-]+|ALL")  # fullmatch (newline wala naam nahi)
 
 
 class AgentStopped(BaseException):
@@ -46,7 +47,7 @@ def redact(obj):
         return {k: "[redacted]" if _SECRET_KEY.search(str(k)) else redact(v) for k, v in obj.items()}
     if isinstance(obj, (list, tuple)):
         return type(obj)(redact(v) for v in obj)
-    if isinstance(obj, str) and obj.startswith(_SECRET_PREFIXES):
+    if isinstance(obj, str) and (obj.startswith(_SECRET_PREFIXES) or _SECRET_INSIDE.search(obj)):
         return "[redacted]"
     return obj
 
@@ -122,16 +123,23 @@ class Agent:
                  registry=None):
         if mode not in MODES:
             raise ValueError(f"mode must be one of {MODES}")
+        if not _NAME.fullmatch(name) or name == "ALL":
+            raise ValueError(f"bad agent name {name!r}")
         if mode in ("approve", "auto"):  # code khud ko promote na kar sake: registry (PR) se match hona chahiye
             reg = (registry if registry is not None else load_registry()).get(name)
             if (not reg or reg.get("mode") != mode or write_budget > reg.get("write_budget", 0)
                     or not set(auto_actions) <= set(reg.get("auto_actions", []))):
                 raise ValueError(f"{name}: {mode} mode needs a matching agents.json entry (mode, budget, auto_actions)")
-        self.department, self.name, self.mode = department, name, mode
-        self.write_budget = 0 if mode == "read_only" else write_budget
-        self.auto_actions, self.tools, self.record = set(auto_actions), dict(tools or {}), record
+        # mode/budget/allow-list init ke baad badal nahi sakte (registry gate bypass na ho)
+        self.department, self.name, self._mode = department, name, mode
+        self._write_budget = 0 if mode == "read_only" else write_budget
+        self._auto_actions, self._tools, self.record = frozenset(auto_actions), dict(tools or {}), record
         self.reads, self.writes, self.proposals = [], [], []
         self.inputs, self.outputs, self.status = {}, {}, None
+
+    mode = property(lambda self: self._mode)
+    write_budget = property(lambda self: self._write_budget)
+    auto_actions = property(lambda self: self._auto_actions)
 
     # ---------- lifecycle ----------
     def __enter__(self):
@@ -144,6 +152,7 @@ class Agent:
 
     def __exit__(self, exc_type, exc, tb):
         if exc_type is not None and issubclass(exc_type, AgentStopped):
+            self.status = exc.reason  # with-block ke baad wala code jaan sake ki run ruka
             self._finish(exc.reason, exc.reason)
             return True  # beech mein ruk gaya - saaf band, log + alert ho chuka
         if exc_type is not None:
@@ -184,16 +193,18 @@ class Agent:
         self._check()
         if self.mode == "read_only":
             raise ValueError(f"{self.name} is read_only - write() not allowed")
-        if _has_secret(args):
-            raise ValueError("write args contain a secret-like key/value - tools must read credentials from env")
+        if _has_secret([args, dry_run_output, undo]):
+            raise ValueError("write args/dry_run_output/undo contain a secret - tools must read credentials from env")
         self._spend()
         entry = {"action": action, "tool": tool, "args": args, "risk": risk}
         if self.mode == "shadow":
             self.writes.append({**entry, "outcome": "shadow"})
             return None
         if self.mode == "auto" and action in self.auto_actions:
-            result = self.tools[tool](**args)
-            self.writes.append({**entry, "outcome": "auto"})
+            self.writes.append(entry)  # tool chalne se PEHLE gino - raise ho to bhi budget kat chuka (retry loop)
+            entry["outcome"] = "error"
+            result = self._tools[tool](**args)
+            entry["outcome"] = "auto"
             return result
         pid = approvals.propose(self.department, self.name, action, risk, tool, args, dry_run_output, undo)
         self.proposals.append(pid)
@@ -202,14 +213,23 @@ class Agent:
 
     def execute(self, pid, tool, args):
         """Founder-approved proposal chalao: wahi agent, wahi tool, wahi args (assert_executable), registry ka fn."""
+        if self.mode not in ("approve", "auto"):  # shadow/read_only kabhi kuch nahi chalate
+            raise ValueError(f"{self.name} is {self.mode} - execute() not allowed")
         self._check()
         self._spend()
         if approvals.get(pid)["agent"] != self.name:
             raise approvals.NotExecutable(f"{pid} belongs to another agent")
         approvals.assert_executable(pid, tool, args)
-        result = self.tools[tool](**args)
+        entry = {"action": "execute", "tool": tool, "args": args, "outcome": "error", "pid": pid}
+        self.writes.append(entry)  # pehle gino
+        try:
+            result = self._tools[tool](**args)
+        except Exception as e:
+            # proposal band: dobara chalana = founder ka naya approval (half-applied money/stock action repeat na ho)
+            approvals.mark_executed(pid, {"ok": False, "error": type(e).__name__})
+            raise
         approvals.mark_executed(pid, {"ok": True})
-        self.writes.append({"action": "execute", "tool": tool, "args": args, "outcome": "executed", "pid": pid})
+        entry["outcome"] = "executed"
         return result
 
 
@@ -224,7 +244,7 @@ def _cli(argv):
         for name, r in sorted(last.items()):
             print(f"{name:20} {r['status']:16} {r.get('mode', '-'):10} {r['at'][:16]}")
         return 0
-    if len(argv) != 2 or argv[0] not in ("kill", "unkill") or not _NAME.match(argv[1]):
+    if len(argv) != 2 or argv[0] not in ("kill", "unkill") or not _NAME.fullmatch(argv[1]):
         print("usage: python -m packages.core.agent kill|unkill <agent-name|ALL> | status", file=sys.stderr)
         return 2
     kdir = os.path.join(_store.ops_dir(), "kill")

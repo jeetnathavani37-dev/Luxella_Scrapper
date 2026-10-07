@@ -29,8 +29,16 @@ All commands run from `/root/Luxella_Scrapper` with `.venv/bin/python`.
 - The harness refuses `approve` or `auto` if the code asks for more than `agents.json` allows.
 - For an immediate stop, kill first, then send the PR.
 
+## Budget notes
+- Shadow writes count against `write_budget` too (shadow should behave like the real mode). A shadow agent with the
+  default budget 0 stops at its first write: set the budget in `agents.json`/the code to the expected run size.
+- An attempt is counted before the tool runs, so a tool that raises still uses budget (retry loops can't repeat it).
+
 ## Approvals
 - Pending proposals: `packages.core.approvals.list_pending()`. The founder decides with
   `decide(pid, "approve" | "reject", "founder")`.
 - An agent runs an approved proposal with `ag.execute(pid, tool, args)`. The tool and args must match exactly,
-  and the proposal must belong to that agent.
+  and the proposal must belong to that agent. Only `approve`/`auto` agents can execute.
+- If the tool raises during `execute`, the proposal is closed as executed with `{"ok": false, "error": <type>}`.
+  Running it again needs a new proposal and a new founder approval, so a half-applied action is never repeated
+  silently.

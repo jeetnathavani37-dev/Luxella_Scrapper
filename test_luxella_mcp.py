@@ -758,6 +758,65 @@ _n = len(_aruns())
 with _ag.Agent("t", "nr-bot", mode="shadow", record=False):
     pass
 assert len(_aruns()) == _n
+# reviewer PR #37: tool raise ho to bhi budget kate; execute fail -> proposal band; shadow execute nahi kar sakta
+_boom_n = []
+def _boom(**kw):
+    _boom_n.append(1)
+    raise RuntimeError("half applied")
+_breg = {n: {"name": n, "mode": m, "write_budget": 5, "auto_actions": ["boom"]} for n, m in [("x1-bot", "auto"), ("x2-bot", "approve")]}
+with _ag.Agent("t", "x1-bot", registry=_breg, mode="auto", write_budget=1, auto_actions=["boom"], tools={"boom": _boom}) as a:
+    for _ in range(5):
+        try:
+            a.write("boom", "boom", {"id": 1})
+        except RuntimeError:
+            pass
+assert len(_boom_n) == 1 and _aruns()[-1]["status"] == "budget_exceeded", _boom_n
+_boom_n.clear()
+with _ag.Agent("t", "x2-bot", registry=_breg, mode="approve", write_budget=5, tools={"boom": _boom}) as a:
+    _bp = a.write("boom", "boom", {"id": 2})
+    _aap.decide(_bp, "approve", "founder")
+    for _ in range(3):
+        try:
+            a.execute(_bp, "boom", {"id": 2})
+        except (RuntimeError, _aap.NotExecutable):
+            pass
+assert len(_boom_n) == 1 and _aap.get(_bp)["status"] == "executed" and _aap.get(_bp)["result"] == {"ok": False, "error": "RuntimeError"}
+with _ag.Agent("t", "x2-bot", mode="shadow", tools={"boom": _boom}) as a:      # shadow koi approved pid nahi chala sakta
+    try:
+        a.execute(_bp, "boom", {"id": 2}); raise AssertionError("shadow execute")
+    except ValueError:
+        pass
+# mode/budget/allow-list init ke baad badal nahi sakte; naam validate; mid-run stop -> status
+with _ag.Agent("t", "x3-bot", mode="shadow", write_budget=1) as a:
+    for _attr, _val in [("mode", "auto"), ("write_budget", 99), ("auto_actions", {"x"})]:
+        try:
+            setattr(a, _attr, _val); raise AssertionError(f"{_attr} mutable")
+        except AttributeError:
+            pass
+    assert not hasattr(a.auto_actions, "add")
+for _bn in ("ALL", "foo\n", "../x", "Bad"):
+    try:
+        _ag.Agent("t", _bn); raise AssertionError(f"bad name {_bn!r}")
+    except ValueError:
+        pass
+with _ag.Agent("t", "x4-bot", mode="shadow", write_budget=1) as a:
+    a.write("w", "t", {}); a.write("w", "t", {})
+assert a.status == "budget_exceeded"
+# redaction: metafield "key" theek; naye prefixes + beech ke secrets pakde
+assert _ag.redact({"key": "care", "value": "x"}) == {"key": "care", "value": "x"}
+for _sv in ("sb_secret_abc", "fc-123", "AIzaXYZ", "Authorization: Bearer abc", "https://x.io/a?token=abc"):
+    assert _ag.redact([_sv]) == ["[redacted]"], _sv
+with _ag.Agent("t", "x5-bot", mode="shadow", write_budget=3) as a:
+    try:
+        a.write("w", "t", {"id": 1}, undo="curl -H 'Bearer abc'"); raise AssertionError("secret in undo")
+    except ValueError:
+        pass
+# CI: registry= / record=False sirf tests aur daily_report mein (warna gate bypass)
+import glob as _aglob
+_bypass = [f for f in _aglob.glob("**/*.py", recursive=True)
+           if not f.startswith((".venv", "node_modules")) and f not in ("test_luxella_mcp.py", "daily_report.py", "packages/core/agent.py")
+           and ("registry=" in open(f, errors="ignore").read() or "record=False" in open(f, errors="ignore").read())]
+assert _bypass == [], f"Agent gate bypass flags outside allowed files: {_bypass}"
 # registry gate: code khud ko promote nahi kar sakta
 for _bad in [dict(name="ghost", mode="approve"), dict(name="appr-bot", mode="auto", auto_actions=["set_price"]),
              dict(name="auto-bot", mode="auto", write_budget=50, auto_actions=["set_price"]),
