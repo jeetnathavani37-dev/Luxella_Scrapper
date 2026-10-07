@@ -107,6 +107,8 @@ def build_report(data, history, now):
     if price0:  # live products price 0 pe = paise ka nuksaan (PR #15/#16), target 0
         bad.append(f"price 0 live: {_fmt(price0)} (target 0)")
     info = [f"stale > 3 d: {_fmt(stale)}"]
+    if data.get("killed"):  # bhoola hua kill switch roz dikhe (spec risk)
+        info.append("killed agents: " + ", ".join(data["killed"]))
     actions = data.get("actions")
     failed = [] if actions is None else actions["failed"]
     if actions is not None and actions.get("cancelled"):
@@ -135,7 +137,7 @@ def build_report(data, history, now):
 def short_message(today, bad, failed, info, missing, appr):
     """Phone ke liye: bad pehle, max 12 lines. Sab theek ho to 3 lines."""
     if not bad and not failed and not missing:
-        return "\n".join([f"Luxella {today.isoformat()}: sab theek", *info[:1],
+        return "\n".join([f"Luxella {today.isoformat()}: sab theek", *info,
                           f"approvals pending: {appr['count'] if appr else 0}"])
     lines = [f"Luxella {today.isoformat()}: {len(bad) + len(missing)} problem(s)", *bad]  # failed already in bad
     by_name = Counter(f["name"] for f in failed)  # ek workflow = ek line (x2, x3...)
@@ -252,24 +254,28 @@ def main(argv=None, readers=None, now=None):
     ap.add_argument("--no-push", action="store_true", help="snapshot + log, ntfy nahi")
     args = ap.parse_args(argv)
     from packages.core import _store
+    from packages.core.agent import Agent, AgentStopped, killed_agents
     now = now or datetime.now(timezone.utc)
-    t0 = time.time()
-    data = gather(now, readers or default_readers(now))
-    report = build_report(data, _store.read_all(_store.path_for(SNAP_FILE)), now)
-    print(report.text + "\n---\n" + report.short)
-    if args.dry_run:
-        return 0
-    _store.append(_store.path_for(SNAP_FILE), report.snapshot)
-    pushed = False
-    if not args.no_push:
-        from packages.core.approvals import push
-        pushed = push(f"Luxella daily {now.date().isoformat()}", report.short, priority=report.priority,
-                      tags="warning" if report.priority == "high" else "white_check_mark")
-    from packages.core.runs import log_run
-    log_run("catalog", "daily-report", inputs={"flags": [a for a in ("no_push",) if getattr(args, a)]},
-            tool_calls=[s for s in readers or default_readers(now)],
-            outputs={"kpis": report.snapshot["kpis"], "pushed": pushed}, duration=round(time.time() - t0, 1),
-            status=report.status)
+    try:  # harness: kill switch, run log, failure alert (spec 2026-10-07-agent-standard). Read-only, budget 0.
+        with Agent("catalog", "daily-report", mode="read_only", record=not args.dry_run) as ag:
+            data = gather(now, {n: (lambda n=n, fn=fn: ag.read(n, fn))
+                                for n, fn in (readers or default_readers(now)).items()})
+            data["killed"] = killed_agents()
+            report = build_report(data, _store.read_all(_store.path_for(SNAP_FILE)), now)
+            print(report.text + "\n---\n" + report.short)
+            if args.dry_run:
+                return 0
+            _store.append(_store.path_for(SNAP_FILE), report.snapshot)
+            pushed = False
+            if not args.no_push:
+                from packages.core.approvals import push
+                pushed = push(f"Luxella daily {now.date().isoformat()}", report.short, priority=report.priority,
+                              tags="warning" if report.priority == "high" else "white_check_mark")
+            ag.inputs = {"flags": [a for a in ("no_push",) if getattr(args, a)]}
+            ag.outputs = {"kpis": report.snapshot["kpis"], "pushed": pushed}
+            ag.status = report.status
+    except AgentStopped:  # kill switch at start: log + alert already sent; exit 0 so systemd doesn't flap
+        pass
     return 0
 
 

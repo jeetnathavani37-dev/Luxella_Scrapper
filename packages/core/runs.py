@@ -13,16 +13,17 @@ from datetime import datetime, timezone
 from packages.core import _store
 
 FILE = "agent_runs.jsonl"
-STATUSES = {"ok", "partial", "failed", "dry_run"}
+STATUSES = {"ok", "partial", "failed", "dry_run", "killed", "budget_exceeded"}  # last 2: agent harness
 
 
 def log_run(department, agent, inputs=None, tool_calls=None, outputs=None, approvals=None,
-            duration=None, status="ok"):
+            duration=None, status="ok", extra=None):
     if status not in STATUSES:
         raise ValueError(f"status must be one of {sorted(STATUSES)}")
     rec = {"id": f"r-{uuid.uuid4().hex[:12]}", "at": datetime.now(timezone.utc).isoformat(),
            "department": department, "agent": agent, "inputs": inputs or {}, "tool_calls": tool_calls or [],
            "outputs": outputs or {}, "approvals": approvals or [], "duration_s": duration, "status": status}
+    rec.update({k: v for k, v in (extra or {}).items() if k not in rec})  # extra kabhi core keys override nahi karta
     _store.append(_store.path_for(FILE), rec)
     return rec["id"]
 
