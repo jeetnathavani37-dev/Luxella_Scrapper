@@ -534,7 +534,7 @@ assert dr.kpi_status(0, 0) == "ok" and dr.kpi_status(3, 0) == "bad" and dr.kpi_s
 assert dr.kpi_status(None, 0) == dr.NA
 _full = {"supabase": {"pushed": 10, "live": 8, "oos": 2, "price0": 0, "stale3d": 1, "scraped_24h": 9, "changes_24h": 4},
          "shopify": {"active": 8, "oos_live": 0}, "actions": {"failed": [], "cancelled": 0, "success": 3, "running": 0},
-         "approvals": {"count": 0, "top": []}, "at": {}}
+         "approvals": {"count": 0, "top": []}, "ports": {"public": []}, "at": {}}
 _now = _dtm(2026, 10, 7, 2, 30)
 _r = dr.build_report(_full, [], _now)
 assert _r.status == "ok" and _r.priority == "default" and len(_r.short.splitlines()) == 3, _r.short
@@ -575,7 +575,8 @@ _ap.urllib.request.urlopen = lambda req, timeout=10: (_sent.append(req), _Resp()
 _old_topic = _os2.environ.get("LUXELLA_NTFY_TOPIC"); _old_sleep = dr.RETRY_SLEEP
 _os2.environ["LUXELLA_NTFY_TOPIC"] = "test-topic"
 _fake = {"supabase": lambda: _full["supabase"], "shopify": lambda: _full["shopify"],
-         "actions": lambda: _full["actions"], "approvals": lambda: {"count": 0, "top": []}}
+         "actions": lambda: _full["actions"], "approvals": lambda: {"count": 0, "top": []},
+         "ports": lambda: {"public": []}}
 assert dr.main(["--dry-run"], readers=_fake, now=_now) == 0
 assert _os2.listdir(_ops) == [] and _sent == []                                   # dry-run: kuch nahi
 assert dr.main(["--no-push"], readers=_fake, now=_now) == 0
@@ -862,7 +863,8 @@ with _acl.redirect_stderr(_aio.StringIO()):
 assert _ag.check_registry(_ag.load_registry()) == [], _ag.check_registry(_ag.load_registry())
 _apush.clear(); _rd_calls = []
 _spy = {"supabase": lambda: _rd_calls.append(1) or _full["supabase"], "shopify": lambda: _full["shopify"],
-        "actions": lambda: _full["actions"], "approvals": lambda: {"count": 0, "top": []}}
+        "actions": lambda: _full["actions"], "approvals": lambda: {"count": 0, "top": []},
+         "ports": lambda: {"public": []}}
 with _acl.redirect_stdout(_aio.StringIO()):
     _ag._cli(["kill", "daily-report"])
     assert dr.main(["--no-push"], readers=_spy, now=_now) == 0
@@ -871,7 +873,7 @@ with _acl.redirect_stdout(_aio.StringIO()):
     assert dr.main(["--no-push"], readers=_spy, now=_now) == 0
 _last = _aruns()[-1]
 assert _rd_calls == [1] and _last["agent"] == "daily-report" and _last["mode"] == "read_only" and _last["writes"] == []
-assert _last["status"] == "ok" and [r["tool"] for r in _last["reads"]] == ["supabase", "shopify", "actions", "approvals"]
+assert _last["status"] == "ok" and [r["tool"] for r in _last["reads"]] == ["supabase", "shopify", "actions", "approvals", "ports"]
 assert "killed agents: deal-finder" in dr.build_report({**_full, "killed": ["deal-finder"]}, [], _now).short
 with _acl.redirect_stdout(_aio.StringIO()):
     _ag._cli(["unkill", "deal-finder"])
@@ -1041,5 +1043,22 @@ if _d_old_ops is None:
     del _dos.environ["LUXELLA_OPS_DIR"]
 else:
     _dos.environ["LUXELLA_OPS_DIR"] = _d_old_ops
+# daily_report public-ports guard (server hardening 2026-10-07): sirf :22 bahar; docker-proxy 0.0.0.0 pakda jaaye
+_ss = """LISTEN 0 4096 0.0.0.0:22 0.0.0.0:*
+LISTEN 0 4096 [::]:22 [::]:*
+LISTEN 0 4096 127.0.0.1:5678 0.0.0.0:*
+LISTEN 0 4096 127.0.0.53%lo:53 0.0.0.0:*
+LISTEN 0 4096 [::1]:18789 [::]:*
+LISTEN 0 4096 0.0.0.0:8080 0.0.0.0:*
+LISTEN 0 4096 [::]:3000 [::]:*
+LISTEN 0 4096 *:9100 *:*"""
+assert dr.public_listeners(_ss) == ["*:9100", "0.0.0.0:8080", ":::3000"], dr.public_listeners(_ss)
+_pfull = {"supabase": {"pushed": 10, "live": 8, "oos": 2, "price0": 0, "stale3d": 1, "scraped_24h": 9, "changes_24h": 4},
+          "shopify": {"active": 8, "oos_live": 0}, "actions": {"failed": [], "cancelled": 0, "success": 3, "running": 0},
+          "approvals": {"count": 0, "top": []}, "ports": {"public": []}, "at": {}}
+_pr = dr.build_report({**_pfull, "ports": {"public": ["0.0.0.0:8080"]}}, [], _now)
+assert _pr.priority == "high" and "public ports: 0.0.0.0:8080" in _pr.short
+assert dr.build_report(_pfull, [], _now).status == "ok" and "public ports" not in dr.build_report(_pfull, [], _now).text
+assert isinstance(dr.read_ports()["public"], list)                     # asli `ss` chalta hai (read-only)
 
 print("ok")
