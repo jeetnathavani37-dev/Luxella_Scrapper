@@ -49,6 +49,8 @@ All commands run from `/root/Luxella_Scrapper` with `.venv/bin/python`.
    token.
 2. In an SSH terminal, run `install -m 600 /dev/stdin /root/.config/agent-keys/telegram-bot.env`, type
    `TELEGRAM_BOT_TOKEN=<token>`, press Enter, then Ctrl-D. Never paste the token in chat.
+   If the file was made any other way, run `chmod 600 /root/.config/agent-keys/telegram-bot.env`. A readable
+   file turns Telegram off (everything silently falls back to ntfy).
 3. Send `/start` to the new bot.
 4. Run `.venv/bin/python telegram_bot.py --whoami`. It prints the chat id, @username and first name of whoever
    sent /start. **Check that it is you**, then run `.venv/bin/python telegram_bot.py --whoami --confirm <that id>`.
