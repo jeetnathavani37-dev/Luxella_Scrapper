@@ -643,6 +643,17 @@ try:
     _sp.fetch_pending_products(None, 10); raise AssertionError("42703 pe retry nahi")
 except _APIError:
     assert len(_pc) == 1
+_pc.clear()
+import httpx as _hx
+def _conn_then_502_then_ok(sb, limit):
+    _pc.append(1)
+    if len(_pc) == 1:
+        raise _hx.ConnectError("x")
+    if len(_pc) == 2:
+        raise _APIError({"message": "bad gateway", "code": 502, "hint": None, "details": None})
+    return []
+_sp._fetch_pending_once = _conn_then_502_then_ok
+assert _sp.fetch_pending_products(None, 5) == [] and len(_pc) == 3        # httpx connect + 5xx dono retry
 _sp._fetch_pending_once, _sp.PENDING_RETRY_SLEEPS = _orig_once, _orig_sleeps
 
 print("ok")

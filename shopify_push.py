@@ -28,7 +28,10 @@ mein DB-level index bhi add kiya (idx_products_pushed_dup,
 idx_products_pending) taaki filtering fast ho.
 """
 import os
+import sys
 import time
+
+import httpx
 import requests
 from datetime import datetime, timezone
 from supabase import create_client
@@ -86,8 +89,10 @@ PENDING_RETRY_SLEEPS = (10, 30)
 
 
 def _is_transient(e):
-    """Statement timeout (57014) ya Supabase 5xx/connection - dobara try layak. Baaki error turant fail."""
-    return getattr(e, "code", None) == "57014" or isinstance(e, (requests.ConnectionError, requests.Timeout))
+    """Statement timeout (57014), Supabase 5xx (non-JSON 5xx pe postgrest code = int status), ya connection/
+    timeout (postgrest httpx use karta hai, requests nahi) - dobara try layak. Baaki error turant fail."""
+    code = getattr(e, "code", None)
+    return code == "57014" or (isinstance(code, int) and code >= 500) or isinstance(e, httpx.TransportError)
 
 
 def fetch_pending_products(sb, limit):
@@ -100,7 +105,9 @@ def fetch_pending_products(sb, limit):
         except Exception as e:
             if pause is None or not _is_transient(e):
                 raise
-            print(f"  pending query timeout/transient ({type(e).__name__}) - {attempt} retry, {pause}s ruk ke")
+            # stderr: luxella_mcp preview isse stdio (JSON-RPC) pe chalata hai - stdout pe print stream tod deta
+            print(f"  pending query timeout/transient ({type(e).__name__}) - {attempt} retry, {pause}s ruk ke",
+                  file=sys.stderr)
             time.sleep(pause)
 
 
