@@ -77,7 +77,8 @@ def _kpis(data):
     actions = data.get("actions")
     return [
         ("products live", _get(data, "supabase", "live"), None),
-        ("OOS-but-live", _get(data, "shopify", "oos_live"), 0),
+        # target nahi (founder 2026-10-07, option a): sold-out listings SEO ke liye live rehti hain - info, alert nahi
+        ("OOS-but-live", _get(data, "shopify", "oos_live"), None),
         ("synced today", _get(data, "supabase", "changes_24h"), None),
         ("failed syncs", None if actions is None else len(actions["failed"]), 0),
         ("photo quality score", None, None),  # abhi koi source nahi

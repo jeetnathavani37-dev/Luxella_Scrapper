@@ -1,0 +1,9 @@
+[Unit]
+Description=Luxella daily report at 08:00 IST
+
+[Timer]
+OnCalendar=*-*-* 02:30:00 UTC
+Persistent=true
+
+[Install]
+WantedBy=timers.target

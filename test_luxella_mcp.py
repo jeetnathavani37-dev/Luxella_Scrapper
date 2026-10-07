@@ -547,7 +547,7 @@ _bad = {**_full, "shopify": {"active": 8, "oos_live": 5}, "supabase": {**_full["
 _r = dr.build_report(_bad, [], _now)
 _sl = _r.short.splitlines()
 assert _r.priority == "high" and len(_sl) <= dr.SHORT_MAX_LINES, _sl
-assert _sl[1].startswith("OOS-but-live") and _sl[2].startswith("failed syncs") and _sl[3].startswith("price 0"), _sl
+assert _sl[1].startswith("failed syncs") and _sl[2].startswith("price 0") and not any(x.startswith("OOS") for x in _sl), _sl
 assert "token" not in _r.short.lower()
 _hist = [{"id": f"d{i}", "at": f"2026-10-0{i}T02:30:00", "kpis": {"products live": 10 * i}} for i in range(1, 7)]
 assert dr.seven_day_avg(_hist, "products live", _date(2026, 10, 7)) is None                      # sirf 6 din

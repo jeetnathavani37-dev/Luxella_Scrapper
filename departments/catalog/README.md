@@ -5,6 +5,7 @@ Keep the catalog accurate and beautiful: scrape, clean, enrich, photograph (bg r
 
 ## Lead agent
 curator: read-only by default, risky actions via approval-queue skill.
+daily-report (`daily_report.py`, timer 08:00 IST): read-only KPI report to the founder via ntfy (spec docs/specs/2026-10-07-daily-report-agent.md).
 
 ## Tools it may use
 luxella_mcp (query, price_report, check_availability, sync_catalog), Shopify dev MCP, rembg scripts
