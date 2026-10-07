@@ -193,6 +193,9 @@ def read_shopify(token):
     return {"active": data["active"]["count"], "oos_live": data["oos_live"]["count"]}
 
 
+PRICE0_NODES = "query($ids: [ID!]!) { nodes(ids: $ids) { ... on Product { id status totalInventory } } }"
+
+
 def read_price0(client, token):
     """Pushed price-0/null products mein se jo Shopify pe ACTIVE + stock > 0 (customer khareed sake)."""
     from repair_variant_stock import read_graphql
@@ -212,8 +215,6 @@ def read_price0(client, token):
                     if n and n["status"] == "ACTIVE" and (n["totalInventory"] or 0) > 0]
     return {"rows": len(ids), "buyable": buyable}
 
-
-PRICE0_NODES = "query($ids: [ID!]!) { nodes(ids: $ids) { ... on Product { id status totalInventory } } }"
 
 
 def read_actions(token_file, repo, since):

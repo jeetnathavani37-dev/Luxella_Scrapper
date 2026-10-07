@@ -1067,7 +1067,7 @@ _p1 = dr.build_report({**_pfull, "price0": {"rows": 237, "buyable": ["8748831768
 assert _p1.priority == "high" and "price 0 buyable: 1 (8748831768749)" in _p1.short
 assert dr.build_report({**_pfull, "price0": None}, [], _now).status == "partial"
 _p0db = _DDB([], [])
-_p0db_rows = [{"id": i, "shopify_product_id": str(1000 + i)} for i in range(1, 61)]
+_p0db_rows = [{"id": i, "shopify_product_id": str(1000 + i)} for i in range(1, 1051)]  # >1000 = 2 pages
 class _P0Q(_DQ):
     def is_(self, *a): return self
     def or_(self, *a): return self
@@ -1076,7 +1076,7 @@ _P0Q.not_ = property(lambda self: self)
 _p0db.table = lambda t: _P0Q(_p0db, t)
 _orig_rg2 = _rv2.read_graphql
 _rv2.read_graphql = lambda t, q, v: {"nodes": [{"id": g, "status": "ACTIVE" if g.endswith("1001") else "DRAFT", "totalInventory": 10} for g in v["ids"]] + [None]}
-assert dr.read_price0(_p0db, "t") == {"rows": 60, "buyable": ["1001"]}
+assert dr.read_price0(_p0db, "t") == {"rows": 1050, "buyable": ["1001"]}
 _rv2.read_graphql = _orig_rg2
 
 print("ok")
