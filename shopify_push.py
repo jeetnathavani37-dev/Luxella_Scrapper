@@ -28,7 +28,10 @@ mein DB-level index bhi add kiya (idx_products_pushed_dup,
 idx_products_pending) taaki filtering fast ho.
 """
 import os
+import sys
 import time
+
+import httpx
 import requests
 from datetime import datetime, timezone
 from supabase import create_client
@@ -81,7 +84,34 @@ def get_shopify_base_url():
     return f"https://{get_shopify_domain()}/admin/api/{API_VERSION}"
 
 
+PENDING_MAX = 1000  # PostgREST ek response mein max 1000 rows deta hai (2000 maango to bhi 1000)
+PENDING_RETRY_SLEEPS = (10, 30)
+
+
+def _is_transient(e):
+    """Statement timeout (57014), Supabase 5xx (non-JSON 5xx pe postgrest code = int status), ya connection/
+    timeout (postgrest httpx use karta hai, requests nahi) - dobara try layak. Baaki error turant fail."""
+    code = getattr(e, "code", None)
+    return code == "57014" or (isinstance(code, int) and code >= 500) or isinstance(e, httpx.TransportError)
+
+
 def fetch_pending_products(sb, limit):
+    """2026-10-07: scheduled push 5 Oct ke baad se 57014 statement timeout pe gir raha tha (index nahi tha -
+    spec docs/specs/2026-10-07-push-pending-timeout.md). Partial index + yahan retry."""
+    limit = min(limit, PENDING_MAX)
+    for attempt, pause in enumerate((*PENDING_RETRY_SLEEPS, None), 1):
+        try:
+            return _fetch_pending_once(sb, limit)
+        except Exception as e:
+            if pause is None or not _is_transient(e):
+                raise
+            # stderr: luxella_mcp preview isse stdio (JSON-RPC) pe chalata hai - stdout pe print stream tod deta
+            print(f"  pending query timeout/transient ({type(e).__name__}) - {attempt} retry, {pause}s ruk ke",
+                  file=sys.stderr)
+            time.sleep(pause)
+
+
+def _fetch_pending_once(sb, limit):
     resp = (
         sb.table("products")
         .select("id,sku,name,brand,category,currency,price,selling_price_inr,compare_at_price_inr,"

@@ -612,5 +612,48 @@ except RuntimeError:
 _rv2.read_graphql = lambda t, q, v: {"active": {"count": 52650, "precision": "EXACT"}, "oos_live": {"count": 7, "precision": "EXACT"}}
 assert dr.read_shopify("t") == {"active": 52650, "oos_live": 7} and "limit: null" in dr.SHOPIFY_COUNTS
 _rv2.read_graphql = _orig_rg
+# shopify_push pending query (2026-10-07): 57014 timeout pe retry, baaki error pe nahi, limit 1000 cap
+import shopify_push as _sp
+from postgrest.exceptions import APIError as _APIError
+_orig_once, _orig_sleeps = _sp._fetch_pending_once, _sp.PENDING_RETRY_SLEEPS
+_sp.PENDING_RETRY_SLEEPS = (0, 0)
+_pc = []
+def _once_timeout_then_ok(sb, limit):
+    _pc.append(limit)
+    if len(_pc) == 1:
+        raise _APIError({"message": "canceling statement due to statement timeout", "code": "57014", "hint": None, "details": None})
+    return [{"id": 1}]
+_sp._fetch_pending_once = _once_timeout_then_ok
+assert _sp.fetch_pending_products(None, 2000) == [{"id": 1}] and _pc == [1000, 1000]   # retry + 1000 cap
+_pc.clear()
+def _always_timeout(sb, limit):
+    _pc.append(1)
+    raise _APIError({"message": "timeout", "code": "57014", "hint": None, "details": None})
+_sp._fetch_pending_once = _always_timeout
+try:
+    _sp.fetch_pending_products(None, 10); raise AssertionError("3 timeouts ke baad raise hona chahiye")
+except _APIError:
+    assert len(_pc) == 3
+_pc.clear()
+def _other_error(sb, limit):
+    _pc.append(1)
+    raise _APIError({"message": "column x does not exist", "code": "42703", "hint": None, "details": None})
+_sp._fetch_pending_once = _other_error
+try:
+    _sp.fetch_pending_products(None, 10); raise AssertionError("42703 pe retry nahi")
+except _APIError:
+    assert len(_pc) == 1
+_pc.clear()
+import httpx as _hx
+def _conn_then_502_then_ok(sb, limit):
+    _pc.append(1)
+    if len(_pc) == 1:
+        raise _hx.ConnectError("x")
+    if len(_pc) == 2:
+        raise _APIError({"message": "bad gateway", "code": 502, "hint": None, "details": None})
+    return []
+_sp._fetch_pending_once = _conn_then_502_then_ok
+assert _sp.fetch_pending_products(None, 5) == [] and len(_pc) == 3        # httpx connect + 5xx dono retry
+_sp._fetch_pending_once, _sp.PENDING_RETRY_SLEEPS = _orig_once, _orig_sleeps
 
 print("ok")
