@@ -974,5 +974,64 @@ _douts = df.eval_outputs(_dcases)
 _drep, _ = _eg.run_gate("deal-finder", _dcases, _douts, results_dir=_dtf.mkdtemp())
 assert _drep["gate"] == "pass", [r for r in _drep["rows"] if r["verdict"] != "pass"]
 assert all(r["verdict"] == "pass" for r in _drep["rows"] if r["critical"])   # pehli baar bhi critical fail = fail
+# deal_finder slice 3: harness run (shadow), dry-run nothing, budget, 0 changes partial, reader fail -> failed alert, kill
+import os as _dos
+import tempfile as _dtf2
+import json as _dj
+import io as _dio
+import contextlib as _dcl
+from packages.core import approvals as _dap, agent as _dag
+_d_old_ops, _d_old_topic = _dos.environ.get("LUXELLA_OPS_DIR"), _dos.environ.get("LUXELLA_NTFY_TOPIC")
+_dops = _dtf2.mkdtemp(); _dos.environ["LUXELLA_OPS_DIR"] = _dops
+_d_orig_push, _dsent = _dap.push, []
+_dap.push = lambda title, body, priority="default", tags="": _dsent.append((title, body, priority)) or True
+_d_orig_sleep = dr.RETRY_SLEEP; dr.RETRY_SLEEP = 0
+def _druns():
+    return [_dj.loads(x) for x in open(_dos.path.join(_dops, "agent_runs.jsonl"))]
+def _deal_world(n=12):
+    ch, pr = [], {}
+    for i in range(1, n + 1):
+        site = ["staud", "frye", "jwpei", "furla"][i % 4]
+        ch.append({"id": i, "site": site, "product_url": f"u{i}", "change_type": "price_decrease", "old_value": "300",
+                   "new_value": str(300 - 10 * i), "name": f"Bag {i}", "changed_at": "2026-10-07T01:00:00+00:00"})
+        pr[(site, f"u{i}")] = {**_dpr(sell=30000 + 1000 * i, live=i % 2 == 0), "id": 100 + i, "site": site,
+                               "product_url": f"u{i}", "price": 300 - 10 * i, "currency": "USD", "name": f"Bag {i}"}
+    return ch, pr
+_dw = _deal_world()
+with _dcl.redirect_stdout(_dio.StringIO()) as _dout:
+    assert df.main(["--dry-run"], fetch=lambda: _dw, now=_dnow) == 0
+assert _dos.listdir(_dops) == [] and _dsent == [] and "would " in _dout.getvalue()     # dry-run: kuch nahi likha/bheja
+with _dcl.redirect_stdout(_dio.StringIO()):
+    df.main(["--no-push"], fetch=lambda: _dw, now=_dnow)
+_dr = _druns()[-1]
+assert _dr["agent"] == "deal-finder" and _dr["mode"] == "shadow" and _dr["status"] == "dry_run" and _dsent == []
+assert 0 < len(_dr["writes"]) <= 20 and all(w["outcome"] == "shadow" for w in _dr["writes"])
+assert all("product_url" not in w["args"] for w in _dr["writes"]) and _dr["outputs"]["kpis"]["new finds"] == len(_dr["outputs"]["top"])
+assert all(t["name"].startswith("<<<UNTRUSTED_DATA") for t in _dr["outputs"]["top"])
+with _dcl.redirect_stdout(_dio.StringIO()):
+    df.main([], fetch=lambda: _dw, now=_dnow)
+assert _druns()[-1]["status"] == "dry_run" and len(_dsent) == 1 and len(_dsent[0][1].splitlines()) <= 12
+with _dcl.redirect_stdout(_dio.StringIO()):
+    df.main(["--no-push"], fetch=lambda: ([], {}), now=_dnow)                          # 0 changes = scraper?
+assert _druns()[-1]["status"] == "partial"
+_dsent.clear()
+def _dfail():
+    raise TimeoutError("db")
+with _dcl.redirect_stdout(_dio.StringIO()), _dcl.redirect_stderr(_dio.StringIO()):
+    df.main([], fetch=_dfail, now=_dnow)
+assert _druns()[-1]["status"] == "failed" and len(_dsent) == 1 and _dsent[0][2] == "high"   # sirf alert, digest nahi
+_dsent.clear(); _dreads = []
+with _dcl.redirect_stdout(_dio.StringIO()):
+    _dag._cli(["kill", "deal-finder"])
+    df.main([], fetch=lambda: _dreads.append(1) or _dw, now=_dnow)
+    _dag._cli(["unkill", "deal-finder"])
+assert _dreads == [] and _druns()[-1]["status"] == "killed" and _dsent[0][2] == "high"
+assert df.margin_estimate({"change_type": "price_decrease", "new_value": "195"}, {"price": 325})          # sync lag
+assert not df.margin_estimate({"change_type": "price_decrease", "new_value": "195"}, {"price": 195.0})
+_dap.push, dr.RETRY_SLEEP = _d_orig_push, _d_orig_sleep
+if _d_old_ops is None:
+    del _dos.environ["LUXELLA_OPS_DIR"]
+else:
+    _dos.environ["LUXELLA_OPS_DIR"] = _d_old_ops
 
 print("ok")

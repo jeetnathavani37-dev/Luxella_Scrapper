@@ -5,12 +5,19 @@ Sourcing agent: roz subah pichhle 24 h ke asli deals (source price drop / restoc
 Spec: docs/agents/deal-finder.md. v1 = shadow mode (Agent harness): sirf digest + would-be proposals log, store
 ya database mein kuch nahi badalta. Koi LLM nahi - niyam seedhe aur testable.
 
-Slice 1: deal ke niyam (classify / score / rank / digest). Readers + harness run agle slices mein.
+Usage (server; env ~/.luxella.env se, systemd unit jaisa):
+    python deal_finder.py --dry-run          # sirf print (would-be writes bhi) - na ntfy, na log
+    python deal_finder.py --no-push          # run log, ntfy nahi
+    python deal_finder.py                    # run log + phone digest
+    python deal_finder.py --eval-out x.jsonl # offline eval outputs (koi read nahi)
 """
+import argparse
+import json
 import math
+import sys
 import unicodedata
 from collections import Counter
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 
 from brand_extractor import BRAND_DISPLAY, _marketplace_slugs, display_brand
 
@@ -131,6 +138,16 @@ def proposals_for(change, product):
     return acts
 
 
+def margin_estimate(change, product):
+    """Source price gira par Luxella ka INR price/landed abhi purane price pe (sync lag) -> margin andaaza hai."""
+    if change["change_type"] != "price_decrease":
+        return False
+    try:
+        return abs(float(product.get("price")) - float(change["new_value"])) > 0.01
+    except (TypeError, ValueError):
+        return True
+
+
 def _line(i, c):
     ch, p = c["change"], c["product"]
     name = clean_name(p.get("name") or ch.get("name"), 40)
@@ -139,7 +156,8 @@ def _line(i, c):
     what = (f"-{discount(ch, p):.0f}% {ch['old_value']}->{ch['new_value']}"
             if ch["change_type"] == "price_decrease" else "restock")
     live = "live" if p.get("shopify_product_id") else "not listed"
-    return f"{i}. {ch.get('site')}: {name} | {what} | Rs{sell:,.0f} | margin {margin}% | {live}"
+    est = " (est)" if margin_estimate(ch, p) else ""
+    return f"{i}. {ch.get('site')}: {name} | {what} | Rs{sell:,.0f} | margin {margin}%{est} | {live}"
 
 
 def build_digest(top, excluded, n_changes, today):
@@ -237,3 +255,93 @@ def eval_outputs(cases):
             verdict = "pass" if got == case["expected"] else "fail"
         out.append({"id": case["id"], "output": got, "verdict": verdict})
     return out
+
+
+# ---------- run (Agent harness, shadow) ----------
+
+def _deal_out(c):
+    ch, p = c["change"], c["product"]
+    sell, landed = float(p["selling_price_inr"]), float(p["landed_cost_inr"])
+    from packages.core.agent import untrusted
+    return {"product_id": p["id"], "site": ch["site"], "brand": p.get("brand"),
+            "name": untrusted(clean_name(p.get("name") or ch.get("name")), ch["site"]), "change": ch["change_type"],
+            "old": ch["old_value"], "new": ch["new_value"], "currency": p.get("currency"),
+            "discount_pct": round(discount(ch, p), 1), "selling_inr": sell, "landed_inr": landed,
+            "margin_inr": round(sell - landed), "margin_pct": round((sell - landed) / landed * 100, 1),
+            "live": bool(p.get("shopify_product_id")), "score": round(c["score"], 1),
+            "margin_estimate": margin_estimate(ch, p), "scraped_at": p.get("scraped_at")}
+
+
+def propose(ag, c):
+    """Shadow would-be writes. Args mein URL nahi (?key= jaisa URL secret check tod deta) - product_id kaafi."""
+    ch, p = c["change"], c["product"]
+    for act in proposals_for(ch, p):
+        if act == "feature_deal":
+            ag.write("feature_deal", "shopify_add_to_deals",
+                     {"product_id": p["id"], "shopify_product_id": p["shopify_product_id"]}, risk="low")
+        else:
+            ag.write("propose_buy", "propose_purchase",
+                     {"product_id": p["id"], "site": ch["site"], "new_price": ch["new_value"],
+                      "currency": p.get("currency")}, risk="high")
+
+
+def default_fetch(now):
+    import shopify_sync
+    client = shopify_sync.get_supabase()
+    changes = fetch_changes(client, (now - timedelta(days=1)).isoformat())
+    survivors = [c for c in latest_per_product(changes)[0] if precheck(c) is None]
+    return changes, fetch_products(client, {(c["site"], c["product_url"]) for c in survivors})
+
+
+def main(argv=None, fetch=None, now=None):
+    ap = argparse.ArgumentParser(description="Luxella deal finder (shadow)")
+    ap.add_argument("--dry-run", action="store_true", help="sirf print: na ntfy, na log")
+    ap.add_argument("--no-push", action="store_true", help="run log, ntfy nahi")
+    ap.add_argument("--eval-out", help="offline eval outputs likho (koi read nahi)")
+    args = ap.parse_args(argv)
+    if args.eval_out:
+        from packages.core.eval_gate import find_cases
+        with open(args.eval_out, "w") as f:
+            for o in eval_outputs(find_cases("deal-finder")):
+                f.write(json.dumps(o) + "\n")
+        return 0
+    from daily_report import gather
+    from packages.core.agent import Agent, AgentStopped
+    now = now or datetime.now(timezone.utc)
+    fetch = fetch or (lambda: default_fetch(now))
+    try:  # harness: shadow = proposals sirf log; kill switch; budget 20 (10 deals x max 2); alerts
+        with Agent("sourcing", "deal-finder", mode="shadow", write_budget=20, record=not args.dry_run) as ag:
+            got = gather(now, {"supabase": lambda: ag.read("supabase", fetch)})["supabase"]
+            if got is None:
+                ag.status = "failed"  # harness high alert; digest nahi (adhoora data pe deal galat)
+                return 0
+            changes, products = got
+            top, excluded = find_deals(changes, products, now)
+            full, phone = build_digest(top, excluded, len(changes), now.date())
+            print(full + "\n---\n" + phone)
+            for c in top:
+                propose(ag, c)
+            if args.dry_run:
+                for w in ag.writes:
+                    print(f"would {w['action']}: {w['args']}")
+                return 0
+            pushed = False
+            if not args.no_push:
+                from packages.core.approvals import push
+                pushed = push(f"Luxella deals {now.date().isoformat()}", phone, tags="moneybag")
+            drops = [d for d in map(_deal_out, top) if d["change"] == "price_decrease"]
+            ag.outputs = {"changes_24h": len(changes), "top": [_deal_out(c) for c in top], "excluded": dict(excluded),
+                          "kpis": {"new finds": len(top), "price drops caught": len(drops),
+                                   "buys proposed": sum(w["action"] == "propose_buy" for w in ag.writes),
+                                   "average discount": round(sum(d["discount_pct"] for d in drops) / len(drops), 1)
+                                   if drops else None},
+                          "pushed": pushed}
+            if not changes or (not args.no_push and not pushed):
+                ag.status = "partial"
+    except AgentStopped:  # kill at start: log + alert already sent
+        pass
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())

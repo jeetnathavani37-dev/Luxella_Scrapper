@@ -1,7 +1,23 @@
 {
   "_doc": "Registered Luxella agents (spec docs/specs/2026-10-07-agent-standard.md). Mode/budget/auto_actions change only through a PR + review + founder merge. CI: packages.core.agent.check_registry.",
   "agents": [
-    {"department": "catalog", "name": "daily-report", "entry": "daily_report.py", "mode": "read_only",
-     "write_budget": 0, "auto_actions": [], "evals": "unit-tests"}
+    {
+      "department": "catalog",
+      "name": "daily-report",
+      "entry": "daily_report.py",
+      "mode": "read_only",
+      "write_budget": 0,
+      "auto_actions": [],
+      "evals": "unit-tests"
+    },
+    {
+      "department": "sourcing",
+      "name": "deal-finder",
+      "entry": "deal_finder.py",
+      "mode": "shadow",
+      "write_budget": 20,
+      "auto_actions": [],
+      "evals": "departments/sourcing/evals/deal-finder.jsonl"
+    }
   ]
 }
