@@ -32,7 +32,7 @@ SNAP_FILE = "daily_report.jsonl"
 DEFAULT_TOKEN_FILE = "/root/.config/agent-keys/github-luxella-token"
 DEFAULT_REPO = "jeetnathavani37-dev/Luxella_Scrapper"
 RETRY_SLEEP = 10
-SOURCES = ("supabase", "shopify", "actions", "approvals", "ports")
+SOURCES = ("supabase", "shopify", "actions", "approvals", "ports", "price0")
 SHORT_MAX_LINES = 12
 
 
@@ -107,9 +107,13 @@ def build_report(data, history, now):
     public = _get(data, "ports", "public")
     if public:  # server hardening spec: sirf :22 bahar khula ho; koi aur = app galti se internet pe
         bad.append("public ports: " + ", ".join(public) + " (only 22 allowed)")
-    if price0:  # live products price 0 pe = paise ka nuksaan (PR #15/#16), target 0
-        bad.append(f"price 0 live: {_fmt(price0)} (target 0)")
+    # spec 2026-10-07-price-zero-cleanup: sirf jo Shopify pe sach mein bik sakte hain (ACTIVE + stock > 0) bad
+    buyable = _get(data, "price0", "buyable")
+    if buyable:
+        bad.append(f"price 0 buyable: {len(buyable)} ({', '.join(buyable[:5])}) (target 0)")
     info = [f"stale > 3 d: {_fmt(stale)}"]
+    if price0:  # Supabase rows (drafted ones bhi) - sirf info; alarm upar wala "buyable" hai
+        info.append(f"price-0 rows: {_fmt(price0)}")
     if data.get("killed"):  # bhoola hua kill switch roz dikhe (spec risk)
         info.append("killed agents: " + ", ".join(data["killed"]))
     actions = data.get("actions")
@@ -187,6 +191,30 @@ def read_shopify(token):
     if any(data[k]["precision"] != "EXACT" for k in ("active", "oos_live")):
         raise RuntimeError("productsCount not EXACT")
     return {"active": data["active"]["count"], "oos_live": data["oos_live"]["count"]}
+
+
+PRICE0_NODES = "query($ids: [ID!]!) { nodes(ids: $ids) { ... on Product { id status totalInventory } } }"
+
+
+def read_price0(client, token):
+    """Pushed price-0/null products mein se jo Shopify pe ACTIVE + stock > 0 (customer khareed sake)."""
+    from repair_variant_stock import read_graphql
+    ids, last = [], 0
+    while True:
+        page = (client.table("products").select("id,shopify_product_id").not_.is_("shopify_product_id", "null")
+                .or_("price.is.null,price.eq.0").gt("id", last).order("id").limit(1000).execute().data)
+        ids += [str(r["shopify_product_id"]) for r in page]
+        if len(page) < 1000:
+            break
+        last = page[-1]["id"]
+    buyable = []
+    for i in range(0, len(ids), 50):
+        gids = [f"gid://shopify/Product/{x}" for x in ids[i:i + 50]]
+        nodes = read_graphql(token, PRICE0_NODES, {"ids": gids})["nodes"]
+        buyable += [n["id"].rsplit("/", 1)[1] for n in nodes
+                    if n and n["status"] == "ACTIVE" and (n["totalInventory"] or 0) > 0]
+    return {"rows": len(ids), "buyable": buyable}
+
 
 
 def read_actions(token_file, repo, since):
@@ -269,12 +297,16 @@ def default_readers(now):
         import shopify_sync
         return read_shopify(shopify_sync.get_access_token())
 
+    def price0():
+        import shopify_sync
+        return read_price0(shopify_sync.get_supabase(), shopify_sync.get_access_token())
+
     def actions():
         return read_actions(os.environ.get("GITHUB_TOKEN_FILE", DEFAULT_TOKEN_FILE),
                             os.environ.get("GITHUB_REPOSITORY", DEFAULT_REPO), now - timedelta(days=1))
 
     return {"supabase": supabase, "shopify": shopify, "actions": actions, "approvals": read_approvals,
-            "ports": read_ports}
+            "ports": read_ports, "price0": price0}
 
 
 def main(argv=None, readers=None, now=None):

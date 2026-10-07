@@ -534,7 +534,7 @@ assert dr.kpi_status(0, 0) == "ok" and dr.kpi_status(3, 0) == "bad" and dr.kpi_s
 assert dr.kpi_status(None, 0) == dr.NA
 _full = {"supabase": {"pushed": 10, "live": 8, "oos": 2, "price0": 0, "stale3d": 1, "scraped_24h": 9, "changes_24h": 4},
          "shopify": {"active": 8, "oos_live": 0}, "actions": {"failed": [], "cancelled": 0, "success": 3, "running": 0},
-         "approvals": {"count": 0, "top": []}, "ports": {"public": []}, "at": {}}
+         "approvals": {"count": 0, "top": []}, "ports": {"public": []}, "price0": {"rows": 0, "buyable": []}, "at": {}}
 _now = _dtm(2026, 10, 7, 2, 30)
 _r = dr.build_report(_full, [], _now)
 assert _r.status == "ok" and _r.priority == "default" and len(_r.short.splitlines()) == 3, _r.short
@@ -542,7 +542,7 @@ assert _r.snapshot["id"] == "d-2026-10-07T02:30" and _r.snapshot["kpis"]["produc
 _r = dr.build_report({**_full, "actions": None}, [], _now)                    # GitHub down -> report phir bhi
 assert _r.status == "partial" and "actions " + dr.NA in _r.text and "failed syncs | " + dr.NA in _r.text
 assert dr.build_report({"at": {}}, [], _now).status == "failed"
-_bad = {**_full, "shopify": {"active": 8, "oos_live": 5}, "supabase": {**_full["supabase"], "price0": 3},
+_bad = {**_full, "shopify": {"active": 8, "oos_live": 5}, "price0": {"rows": 3, "buyable": ["1"]},
         "actions": {"failed": [{"name": f"job{i}", "url": "u"} for i in range(20)], "cancelled": 2, "success": 0, "running": 0}}
 _r = dr.build_report(_bad, [], _now)
 _sl = _r.short.splitlines()
@@ -576,7 +576,7 @@ _old_topic = _os2.environ.get("LUXELLA_NTFY_TOPIC"); _old_sleep = dr.RETRY_SLEEP
 _os2.environ["LUXELLA_NTFY_TOPIC"] = "test-topic"
 _fake = {"supabase": lambda: _full["supabase"], "shopify": lambda: _full["shopify"],
          "actions": lambda: _full["actions"], "approvals": lambda: {"count": 0, "top": []},
-        "ports": lambda: {"public": []}}
+        "ports": lambda: {"public": []}, "price0": lambda: {"rows": 0, "buyable": []}}
 assert dr.main(["--dry-run"], readers=_fake, now=_now) == 0
 assert _os2.listdir(_ops) == [] and _sent == []                                   # dry-run: kuch nahi
 assert dr.main(["--no-push"], readers=_fake, now=_now) == 0
@@ -864,7 +864,7 @@ assert _ag.check_registry(_ag.load_registry()) == [], _ag.check_registry(_ag.loa
 _apush.clear(); _rd_calls = []
 _spy = {"supabase": lambda: _rd_calls.append(1) or _full["supabase"], "shopify": lambda: _full["shopify"],
         "actions": lambda: _full["actions"], "approvals": lambda: {"count": 0, "top": []},
-         "ports": lambda: {"public": []}}
+         "ports": lambda: {"public": []}, "price0": lambda: {"rows": 0, "buyable": []}}
 with _acl.redirect_stdout(_aio.StringIO()):
     _ag._cli(["kill", "daily-report"])
     assert dr.main(["--no-push"], readers=_spy, now=_now) == 0
@@ -873,7 +873,7 @@ with _acl.redirect_stdout(_aio.StringIO()):
     assert dr.main(["--no-push"], readers=_spy, now=_now) == 0
 _last = _aruns()[-1]
 assert _rd_calls == [1] and _last["agent"] == "daily-report" and _last["mode"] == "read_only" and _last["writes"] == []
-assert _last["status"] == "ok" and [r["tool"] for r in _last["reads"]] == ["supabase", "shopify", "actions", "approvals", "ports"]
+assert _last["status"] == "ok" and [r["tool"] for r in _last["reads"]] == ["supabase", "shopify", "actions", "approvals", "ports", "price0"]
 assert "killed agents: deal-finder" in dr.build_report({**_full, "killed": ["deal-finder"]}, [], _now).short
 with _acl.redirect_stdout(_aio.StringIO()):
     _ag._cli(["unkill", "deal-finder"])
@@ -1055,10 +1055,28 @@ LISTEN 0 4096 *:9100 *:*"""
 assert dr.public_listeners(_ss) == ["*:9100", "0.0.0.0:8080", ":::3000"], dr.public_listeners(_ss)
 _pfull = {"supabase": {"pushed": 10, "live": 8, "oos": 2, "price0": 0, "stale3d": 1, "scraped_24h": 9, "changes_24h": 4},
           "shopify": {"active": 8, "oos_live": 0}, "actions": {"failed": [], "cancelled": 0, "success": 3, "running": 0},
-          "approvals": {"count": 0, "top": []}, "ports": {"public": []}, "at": {}}
+          "approvals": {"count": 0, "top": []}, "ports": {"public": []}, "price0": {"rows": 0, "buyable": []}, "at": {}}
 _pr = dr.build_report({**_pfull, "ports": {"public": ["0.0.0.0:8080"]}}, [], _now)
 assert _pr.priority == "high" and "public ports: 0.0.0.0:8080" in _pr.short
 assert dr.build_report(_pfull, [], _now).status == "ok" and "public ports" not in dr.build_report(_pfull, [], _now).text
 assert isinstance(dr.read_ports()["public"], list)                     # asli `ss` chalta hai (read-only)
+# price-0 metric (spec 2026-10-07-price-zero-cleanup): alarm sirf Shopify pe bikne layak pe; rows = info
+_p0 = dr.build_report({**_pfull, "supabase": {**_pfull["supabase"], "price0": 237}}, [], _now)
+assert _p0.status == "ok" and "price-0 rows: 237" in _p0.text and "price 0 buyable" not in _p0.short
+_p1 = dr.build_report({**_pfull, "price0": {"rows": 237, "buyable": ["8748831768749"]}}, [], _now)
+assert _p1.priority == "high" and "price 0 buyable: 1 (8748831768749)" in _p1.short
+assert dr.build_report({**_pfull, "price0": None}, [], _now).status == "partial"
+_p0db = _DDB([], [])
+_p0db_rows = [{"id": i, "shopify_product_id": str(1000 + i)} for i in range(1, 1051)]  # >1000 = 2 pages
+class _P0Q(_DQ):
+    def is_(self, *a): return self
+    def or_(self, *a): return self
+    def execute(self): return type("R", (), {"data": [r for r in _p0db_rows if r["id"] > self.f.get("gt_id", 0)][:self.n]})()
+_P0Q.not_ = property(lambda self: self)
+_p0db.table = lambda t: _P0Q(_p0db, t)
+_orig_rg2 = _rv2.read_graphql
+_rv2.read_graphql = lambda t, q, v: {"nodes": [{"id": g, "status": "ACTIVE" if g.endswith("1001") else "DRAFT", "totalInventory": 10} for g in v["ids"]] + [None]}
+assert dr.read_price0(_p0db, "t") == {"rows": 1050, "buyable": ["1001"]}
+_rv2.read_graphql = _orig_rg2
 
 print("ok")
