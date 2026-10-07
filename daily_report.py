@@ -23,6 +23,7 @@ import os
 import sys
 import time
 import urllib.request
+from collections import Counter
 from dataclasses import dataclass
 from datetime import date, datetime, timedelta, timezone
 
@@ -136,8 +137,9 @@ def short_message(today, bad, failed, info, missing, appr):
     if not bad and not failed and not missing:
         return "\n".join([f"Luxella {today.isoformat()}: sab theek", *info[:1],
                           f"approvals pending: {appr['count'] if appr else 0}"])
-    lines = [f"Luxella {today.isoformat()}: {len(bad) + len(failed)} problem(s)", *bad]
-    lines += [f"FAILED {f['name']}" for f in failed]
+    lines = [f"Luxella {today.isoformat()}: {len(bad) + len(missing)} problem(s)", *bad]  # failed already in bad
+    by_name = Counter(f["name"] for f in failed)  # ek workflow = ek line (x2, x3...)
+    lines += [f"FAILED {n}" + (f" x{c}" if c > 1 else "") for n, c in by_name.items()]
     lines += [f"{s}: {NA}" for s in missing]
     lines += info
     if appr:

@@ -51,7 +51,7 @@ healthy.
      | products live | Supabase | `-` |
      | OOS-but-live | Shopify | `-` (founder 2026-10-07: sold-out listings stay live for SEO, so it is info and not an alert. 16,689 active products at 0 stock) |
      | synced today | `product_changes` 24 h | `-` |
-     | failed syncs | failed + cancelled Actions runs | ≤ 0 |
+     | failed syncs | failed Actions runs (cancelled = info line, not counted: Auto Pilot and Backfill cancel daily; reviewer PR #34) | ≤ 0 |
      | photo quality score | `n/a (source missing)` | – |
 
      Plus 2 extra lines under Highlights:

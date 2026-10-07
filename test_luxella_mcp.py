@@ -549,6 +549,12 @@ _sl = _r.short.splitlines()
 assert _r.priority == "high" and len(_sl) <= dr.SHORT_MAX_LINES, _sl
 assert _sl[1].startswith("failed syncs") and _sl[2].startswith("price 0") and not any(x.startswith("OOS") for x in _sl), _sl
 assert "token" not in _r.short.lower()
+assert "FAILED job0" in _r.short                                   # 20 alag jobs, cap 12 lines
+_dup = {**_full, "actions": {"failed": [{"name": "Push", "url": "u"}] * 3, "cancelled": 0, "success": 0, "running": 0}}
+_r = dr.build_report(_dup, [], _now)
+assert "FAILED Push x3" in _r.short and _r.short.count("FAILED") == 1, _r.short
+assert _r.short.splitlines()[0].endswith(": 1 problem(s)"), _r.short       # failed syncs = 1 problem, double count nahi
+assert dr.build_report({**_full, "shopify": None}, [], _now).short.splitlines()[0].endswith(": 1 problem(s)")
 _hist = [{"id": f"d{i}", "at": f"2026-10-0{i}T02:30:00", "kpis": {"products live": 10 * i}} for i in range(1, 7)]
 assert dr.seven_day_avg(_hist, "products live", _date(2026, 10, 7)) is None                      # sirf 6 din
 _hist.append({"id": "d0", "at": "2026-09-30T02:30:00", "kpis": {"products live": None}})        # 7wa din, value None
@@ -566,6 +572,7 @@ _orig_urlopen = _ap.urllib.request.urlopen
 class _Resp:
     def read(self): return b""
 _ap.urllib.request.urlopen = lambda req, timeout=10: (_sent.append(req), _Resp())[1]
+_old_topic = _os2.environ.get("LUXELLA_NTFY_TOPIC"); _old_sleep = dr.RETRY_SLEEP
 _os2.environ["LUXELLA_NTFY_TOPIC"] = "test-topic"
 _fake = {"supabase": lambda: _full["supabase"], "shopify": lambda: _full["shopify"],
          "actions": lambda: _full["actions"], "approvals": lambda: {"count": 0, "top": []}}
@@ -585,7 +592,11 @@ _body = _sent[0].data.decode()
 assert "actions: " + dr.NA in _body and "Bearer" not in _body and "/nonexistent" not in _body
 assert _sent[0].get_header("Priority") == "default" and _sent[0].full_url.endswith("/test-topic")
 _ap.urllib.request.urlopen = _orig_urlopen
-del _os2.environ["LUXELLA_NTFY_TOPIC"]
+dr.RETRY_SLEEP = _old_sleep
+if _old_topic is None:
+    del _os2.environ["LUXELLA_NTFY_TOPIC"]
+else:
+    _os2.environ["LUXELLA_NTFY_TOPIC"] = _old_topic
 if _old_ops is None:
     del _os2.environ["LUXELLA_OPS_DIR"]
 else:
