@@ -527,4 +527,33 @@ with contextlib.redirect_stdout(_io.StringIO()):
 assert _main.delisted is dl and hasattr(_main, "scrape_shopify_catalog")
 os.environ["SUPABASE_URL"] = os.environ["SUPABASE_SERVICE_KEY"] = ""
 
+# daily_report (spec 2026-10-07): status rules, missing source -> n/a + partial, bad pehle, phone <= 12 lines, 7-day avg
+import daily_report as dr
+from datetime import datetime as _dtm, date as _date
+assert dr.kpi_status(0, 0) == "ok" and dr.kpi_status(3, 0) == "bad" and dr.kpi_status(5, None) == "-"
+assert dr.kpi_status(None, 0) == dr.NA
+_full = {"supabase": {"pushed": 10, "live": 8, "oos": 2, "price0": 0, "stale3d": 1, "scraped_24h": 9, "changes_24h": 4},
+         "shopify": {"active": 8, "oos_live": 0}, "actions": {"failed": [], "cancelled": 0, "success": 3, "running": 0},
+         "approvals": {"count": 0, "top": []}, "at": {}}
+_now = _dtm(2026, 10, 7, 2, 30)
+_r = dr.build_report(_full, [], _now)
+assert _r.status == "ok" and _r.priority == "default" and len(_r.short.splitlines()) == 3, _r.short
+assert _r.snapshot["id"] == "d-2026-10-07T02:30" and _r.snapshot["kpis"]["products live"] == 8
+_r = dr.build_report({**_full, "actions": None}, [], _now)                    # GitHub down -> report phir bhi
+assert _r.status == "partial" and "actions " + dr.NA in _r.text and "failed syncs | " + dr.NA in _r.text
+assert dr.build_report({"at": {}}, [], _now).status == "failed"
+_bad = {**_full, "shopify": {"active": 8, "oos_live": 5}, "supabase": {**_full["supabase"], "price0": 3},
+        "actions": {"failed": [{"name": f"job{i}", "url": "u"} for i in range(20)], "cancelled": 2, "success": 0, "running": 0}}
+_r = dr.build_report(_bad, [], _now)
+_sl = _r.short.splitlines()
+assert _r.priority == "high" and len(_sl) <= dr.SHORT_MAX_LINES, _sl
+assert _sl[1].startswith("OOS-but-live") and _sl[2].startswith("failed syncs") and _sl[3].startswith("price 0"), _sl
+assert "token" not in _r.short.lower()
+_hist = [{"id": f"d{i}", "at": f"2026-10-0{i}T02:30:00", "kpis": {"products live": 10 * i}} for i in range(1, 7)]
+assert dr.seven_day_avg(_hist, "products live", _date(2026, 10, 7)) is None                      # sirf 6 din
+_hist.append({"id": "d0", "at": "2026-09-30T02:30:00", "kpis": {"products live": None}})        # 7wa din, value None
+assert dr.seven_day_avg(_hist, "products live", _date(2026, 10, 7)) == 35                       # None din chhoda
+_hist.append({"id": "dx", "at": "2026-10-07T01:00:00", "kpis": {"products live": 999}})         # aaj gina nahi
+assert dr.seven_day_avg(_hist, "products live", _date(2026, 10, 7)) == 35
+
 print("ok")
