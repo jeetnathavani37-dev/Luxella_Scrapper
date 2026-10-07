@@ -155,3 +155,85 @@ def build_digest(top, excluded, n_changes, today):
              *[_line(i, c) for i, c in enumerate(top[:PHONE_TOP], 1)],
              f"excluded: {ex[:120] or '-'}"]
     return "\n".join(full), "\n".join(phone[:12])
+
+
+# ---------- readers (sirf padhna; ORDER BY changed_at nahi - index nahi, id se page) ----------
+CHANGE_COLS = "id,site,sku,product_url,name,change_type,old_value,new_value,changed_at"
+PRODUCT_COLS = ("id,site,product_url,name,brand,price,currency,in_stock,selling_price_inr,landed_cost_inr,"
+                "compare_at_price_inr,shopify_product_id,is_duplicate,scraped_at")
+URL_CHUNK = 50  # safe-writes <= 200; lambe URLs ke saath GET chhota rakho
+
+
+def fetch_changes(client, since):
+    rows, last = [], 0
+    while True:
+        page = (client.table("product_changes").select(CHANGE_COLS)
+                .in_("change_type", ["price_decrease", "back_in_stock", "price_increase"])
+                .gt("changed_at", since).gt("id", last).order("id").limit(1000).execute().data)
+        rows += page
+        if len(page) < 1000:
+            return rows
+        last = page[-1]["id"]
+
+
+def fetch_products(client, keys):
+    """keys: {(site, product_url)} -> {(site, url): product}. Match (site, url) se, sku se kabhi nahi."""
+    out, by_site = {}, {}
+    for site, url in keys:
+        by_site.setdefault(site, []).append(url)
+    for site, urls in by_site.items():
+        for i in range(0, len(urls), URL_CHUNK):
+            for p in (client.table("products").select(PRODUCT_COLS).eq("site", site)
+                      .in_("product_url", urls[i:i + URL_CHUNK]).execute().data):
+                out[(p["site"], p["product_url"])] = p
+    return out
+
+
+def latest_per_product(changes):
+    """Ek product = ek row (sabse nayi decrease/restock). Flapping = uske baad usi product ka price_increase."""
+    last, rises = {}, {}
+    for c in sorted(changes, key=lambda c: c["id"]):
+        key = (c["site"], c["product_url"])
+        if c["change_type"] == "price_increase":
+            rises[key] = c["id"]
+        else:
+            last[key] = c
+    flapping = {c["id"] for key, c in last.items() if rises.get(key, 0) > c["id"]}
+    return list(last.values()), flapping
+
+
+def find_deals(changes, products, now):
+    """-> (ranked top list, excluded Counter). products = fetch_products ka result."""
+    rows, flapping = latest_per_product(changes)
+    excluded, cands = Counter(), []
+    for c in rows:
+        ok, why = classify(c, products.get((c["site"], c["product_url"])), flapping, now)
+        if not ok:
+            excluded[why] += 1
+            continue
+        p = products[(c["site"], c["product_url"])]
+        cands.append({"change": c, "product": p, "score": score(c, p)})
+    return rank(cands), excluded
+
+
+# ---------- offline eval (eval_gate ke liye outputs with verdict) ----------
+
+def eval_outputs(cases):
+    out = []
+    for case in cases:
+        inp = case["input"]
+        now = datetime.fromisoformat(inp["now"])
+        if case["kind"] == "classify":
+            flap = {inp["change"]["id"]} if inp.get("flapping") else set()
+            ok, why = classify(inp["change"], inp.get("product"), flap, now)
+            got = "included" if ok else f"excluded:{why}"
+            name_ok = all(ch not in clean_name((inp.get("product") or {}).get("name") or inp["change"].get("name"))
+                          for ch in ("​", "‍", "\n"))
+            verdict = "pass" if got == case["expected"] and name_ok else "fail"
+        else:  # rank
+            cands = [{"change": c["change"], "product": c["product"], "score": score(c["change"], c["product"])}
+                     for c in inp["candidates"]]
+            got = [c["change"]["id"] for c in rank(cands)]
+            verdict = "pass" if got == case["expected"] else "fail"
+        out.append({"id": case["id"], "output": got, "verdict": verdict})
+    return out

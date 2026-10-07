@@ -932,5 +932,47 @@ _top = [{**c, "product": {**c["product"], "name": _inj}} for c in _rk]
 _full, _phone = df.build_digest(_top, _DC({"bad_price": 36, "stale": 4}), 1200, _dnow.date())
 assert len(_phone.splitlines()) <= 12 and "36 bad_price" in _phone and "\u200b" not in _phone
 assert df.build_digest([], _DC(), 0, _dnow.date())[1].endswith("scraper?")
+# deal_finder slice 2: id paging, 50-url chunks, (site,url) join, dedupe + flapping, real eval set via eval_gate
+class _DQ:
+    def __init__(self, db, table): self.db, self.table, self.f = db, table, {}
+    def select(self, *a, **k): return self
+    def in_(self, col, vals): self.f[col] = list(vals); return self
+    def gt(self, col, v): self.f["gt_" + col] = v; return self
+    def eq(self, col, v): self.f[col] = v; return self
+    def order(self, *a): return self
+    def limit(self, n): self.n = n; return self
+    def execute(self):
+        self.db.calls.append((self.table, dict(self.f)))
+        if self.table == "product_changes":
+            data = [r for r in self.db.changes if r["id"] > self.f["gt_id"]][:self.n]
+        else:
+            data = [p for p in self.db.products if p["site"] == self.f["site"] and p["product_url"] in self.f["product_url"]]
+        return type("R", (), {"data": data})()
+class _DDB:
+    def __init__(self, changes, products): self.changes, self.products, self.calls = changes, products, []
+    def table(self, t): return _DQ(self, t)
+_dchanges = [{"id": i, "site": "staud", "product_url": f"u{i}", "change_type": "price_decrease"} for i in range(1, 2501)]
+_ddb = _DDB(_dchanges, [{"site": "staud", "product_url": f"u{i}", "id": i} for i in range(1, 121)])
+assert len(df.fetch_changes(_ddb, "2026-10-06")) == 2500 and sum(c[0] == "product_changes" for c in _ddb.calls) == 3
+_dp = df.fetch_products(_ddb, {("staud", f"u{i}") for i in range(1, 121)})
+assert len(_dp) == 120 and all(len(c[1]["product_url"]) <= 50 for c in _ddb.calls if c[0] == "products")
+# dedupe: latest decrease wins; flapping = baad mein price_increase
+_fl = [{"id": 1, "site": "s", "product_url": "a", "change_type": "price_decrease"},
+       {"id": 2, "site": "s", "product_url": "a", "change_type": "price_decrease"},
+       {"id": 3, "site": "s", "product_url": "a", "change_type": "price_increase"},
+       {"id": 4, "site": "s", "product_url": "b", "change_type": "price_increase"},
+       {"id": 5, "site": "s", "product_url": "b", "change_type": "back_in_stock"}]
+_lp, _flap = df.latest_per_product(_fl)
+assert sorted(c["id"] for c in _lp) == [2, 5] and _flap == {2}
+# real eval set (departments/sourcing/evals/deal-finder.jsonl): CI niyam + eval_gate >= 90% + har critical pass
+from packages.core import eval_gate as _eg
+import tempfile as _dtf
+_dcases = _eg.find_cases("deal-finder")
+_dtags = [t for c in _dcases for t in c.get("tags", [])]
+assert len(_dcases) >= 24 and _dtags.count("edge") >= 3 and _dtags.count("injection") >= 3, (len(_dcases), _dtags)
+_douts = df.eval_outputs(_dcases)
+_drep, _ = _eg.run_gate("deal-finder", _dcases, _douts, results_dir=_dtf.mkdtemp())
+assert _drep["gate"] == "pass", [r for r in _drep["rows"] if r["verdict"] != "pass"]
+assert all(r["verdict"] == "pass" for r in _drep["rows"] if r["critical"])   # pehli baar bhi critical fail = fail
 
 print("ok")
