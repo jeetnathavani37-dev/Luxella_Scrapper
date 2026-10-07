@@ -670,12 +670,15 @@ def _aruns():
     return [_aj.loads(x) for x in open(_ao.path.join(_ao.environ["LUXELLA_OPS_DIR"], "agent_runs.jsonl"))]
 _acalls = []
 _atools = {"set_price": lambda **kw: _acalls.append(kw) or "done"}
+_areg = {n: {"name": n, "mode": m, "write_budget": 5, "auto_actions": ["set_price"]}
+         for n, m in [("appr-bot", "approve"), ("other-bot", "approve"), ("auto-bot", "auto"), ("k2-bot", "auto"),
+                      ("b-bot", "auto")]}
 # shadow: tool kabhi nahi chalta, status dry_run, koi alert nahi
 with _ag.Agent("t", "shadow-bot", mode="shadow", write_budget=5, tools=_atools) as a:
     assert a.write("set_price", "set_price", {"id": 1, "price": 9}) is None
 assert _acalls == [] and _apush == [] and _aruns()[-1]["status"] == "dry_run" and _aruns()[-1]["mode"] == "shadow"
 # approve: propose -> founder approve -> execute ek baar; args badle to NotExecutable; agent khud decide nahi kar sakta
-with _ag.Agent("t", "appr-bot", mode="approve", write_budget=5, tools=_atools) as a:
+with _ag.Agent("t", "appr-bot", registry=_areg, mode="approve", write_budget=5, tools=_atools) as a:
     pid = a.write("set_price", "set_price", {"id": 1, "price": 9}, risk="med")
     assert pid.startswith("a-") and _acalls == []
     try:
@@ -689,14 +692,14 @@ with _ag.Agent("t", "appr-bot", mode="approve", write_budget=5, tools=_atools) a
         pass
     assert a.execute(pid, "set_price", {"id": 1, "price": 9}) == "done" and _acalls == [{"id": 1, "price": 9}]
 assert _aap.get(pid)["status"] == "executed" and _aruns()[-1]["approvals"] == [pid]
-with _ag.Agent("t", "other-bot", mode="approve", write_budget=5, tools=_atools) as a:   # doosre agent ka pid
+with _ag.Agent("t", "other-bot", registry=_areg, mode="approve", write_budget=5, tools=_atools) as a:   # doosre agent ka pid
     try:
         a.execute(pid, "set_price", {"id": 1, "price": 9}); raise AssertionError("doosre agent ka proposal")
     except _aap.NotExecutable:
         pass
 _acalls.clear()
 # auto: allow-listed action chalta hai, baaki propose
-with _ag.Agent("t", "auto-bot", mode="auto", write_budget=5, auto_actions=["set_price"], tools=_atools) as a:
+with _ag.Agent("t", "auto-bot", registry=_areg, mode="auto", write_budget=5, auto_actions=["set_price"], tools=_atools) as a:
     assert a.write("set_price", "set_price", {"id": 2}) == "done"
     assert a.write("delete", "set_price", {"id": 3}).startswith("a-")
 assert _acalls == [{"id": 2}]
@@ -718,7 +721,7 @@ except _ag.AgentStopped as e:
 del _ao.environ["LUXELLA_KILL"]
 assert _aruns()[-1]["status"] == "killed" and _apush[-1][2] == "high"
 _kdir = _ao.path.join(_ao.environ["LUXELLA_OPS_DIR"], "kill"); _ao.makedirs(_kdir)
-with _ag.Agent("t", "k2-bot", mode="auto", write_budget=5, auto_actions=["set_price"], tools=_atools) as a:
+with _ag.Agent("t", "k2-bot", registry=_areg, mode="auto", write_budget=5, auto_actions=["set_price"], tools=_atools) as a:
     a.write("set_price", "set_price", {"id": 1})
     open(_ao.path.join(_kdir, "ALL"), "w").close()
     a.write("set_price", "set_price", {"id": 2})
@@ -726,7 +729,7 @@ with _ag.Agent("t", "k2-bot", mode="auto", write_budget=5, auto_actions=["set_pr
 assert _acalls == [{"id": 1}] and _aruns()[-1]["status"] == "killed"
 _ao.remove(_ao.path.join(_kdir, "ALL")); _acalls.clear(); _apush.clear()
 # write budget: 2 ke baad ruk jaata hai, 1 high alert
-with _ag.Agent("t", "b-bot", mode="auto", write_budget=2, auto_actions=["set_price"], tools=_atools) as a:
+with _ag.Agent("t", "b-bot", registry=_areg, mode="auto", write_budget=2, auto_actions=["set_price"], tools=_atools) as a:
     for i in range(5):
         a.write("set_price", "set_price", {"id": i})
 assert len(_acalls) == 2 and _aruns()[-1]["status"] == "budget_exceeded" and len(_apush) == 1 and _apush[0][2] == "high"
@@ -755,6 +758,45 @@ _n = len(_aruns())
 with _ag.Agent("t", "nr-bot", mode="shadow", record=False):
     pass
 assert len(_aruns()) == _n
+# registry gate: code khud ko promote nahi kar sakta
+for _bad in [dict(name="ghost", mode="approve"), dict(name="appr-bot", mode="auto", auto_actions=["set_price"]),
+             dict(name="auto-bot", mode="auto", write_budget=50, auto_actions=["set_price"]),
+             dict(name="auto-bot", mode="auto", write_budget=5, auto_actions=["delete_all"])]:
+    try:
+        _ag.Agent("t", registry=_areg, **_bad); raise AssertionError(f"unregistered promote: {_bad}")
+    except ValueError:
+        pass
+_ag.Agent("t", "anything", mode="shadow")                     # shadow/read_only ko registry nahi chahiye
+# check_registry: CI niyam (temp repo)
+_rr = _atf.mkdtemp(); _ao.makedirs(_ao.path.join(_rr, "ev"))
+open(_ao.path.join(_rr, "bot.py"), "w").write("with Agent(...):\n")
+open(_ao.path.join(_rr, "plain.py"), "w").write("print(1)\n")
+def _cases(n, inj=3, edge=3):
+    rows = [{"id": str(i), "tags": (["injection"] if i < inj else []) + (["edge"] if inj <= i < inj + edge else [])}
+            for i in range(n)]
+    return "\n".join(_aj.dumps(r) for r in rows)
+open(_ao.path.join(_rr, "ev", "good.jsonl"), "w").write(_cases(20))
+open(_ao.path.join(_rr, "ev", "few.jsonl"), "w").write(_cases(5))
+open(_ao.path.join(_rr, "ev", "noinj.jsonl"), "w").write(_cases(20, inj=0))
+def _e(**kw):
+    return {"name": "x", "entry": "bot.py", "mode": "shadow", "write_budget": 5, "evals": "ev/good.jsonl", **kw}
+assert _ag.check_registry({"x": _e()}, _rr) == []
+assert any("5 eval cases" in m and "20" in m for m in _ag.check_registry({"x": _e(evals="ev/few.jsonl")}, _rr))
+assert any("injection" in m for m in _ag.check_registry({"x": _e(evals="ev/noinj.jsonl")}, _rr))
+assert any("auto_actions" in m for m in _ag.check_registry({"x": _e(mode="auto")}, _rr))
+assert any("201" in m for m in _ag.check_registry({"x": _e(write_budget=201)}, _rr))
+assert any("Agent harness" in m for m in _ag.check_registry({"x": _e(entry="plain.py")}, _rr))
+assert any("unit-tests" in m for m in _ag.check_registry({"x": _e(evals="unit-tests")}, _rr))
+assert any("write_budget 0" in m for m in _ag.check_registry({"x": _e(mode="read_only")}, _rr))
+# CLI: kill / unkill / status, bad name mana
+import io as _aio
+import contextlib as _acl
+with _acl.redirect_stdout(_aio.StringIO()):
+    assert _ag._cli(["kill", "deal-finder"]) == 0 and _ag.kill_reason("deal-finder") == "kill file deal-finder"
+    assert _ag._cli(["status"]) == 0
+    assert _ag._cli(["unkill", "deal-finder"]) == 0 and _ag.kill_reason("deal-finder") is None
+with _acl.redirect_stderr(_aio.StringIO()):
+    assert _ag._cli(["kill", "../etc"]) == 2 and _ag._cli(["nuke", "x"]) == 2
 _ag.approvals.push, _aap._notify = _a_orig_push, _a_orig_notify
 if _a_old_ops is None:
     del _ao.environ["LUXELLA_OPS_DIR"]
