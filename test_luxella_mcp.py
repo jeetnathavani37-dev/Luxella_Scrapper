@@ -797,6 +797,23 @@ with _acl.redirect_stdout(_aio.StringIO()):
     assert _ag._cli(["unkill", "deal-finder"]) == 0 and _ag.kill_reason("deal-finder") is None
 with _acl.redirect_stderr(_aio.StringIO()):
     assert _ag._cli(["kill", "../etc"]) == 2 and _ag._cli(["nuke", "x"]) == 2
+# daily_report on the harness: kill file -> no reads, status killed, 1 high alert; registry real check clean
+assert _ag.check_registry(_ag.load_registry()) == [], _ag.check_registry(_ag.load_registry())
+_apush.clear(); _rd_calls = []
+_spy = {"supabase": lambda: _rd_calls.append(1) or _full["supabase"], "shopify": lambda: _full["shopify"],
+        "actions": lambda: _full["actions"], "approvals": lambda: {"count": 0, "top": []}}
+with _acl.redirect_stdout(_aio.StringIO()):
+    _ag._cli(["kill", "daily-report"])
+    assert dr.main(["--no-push"], readers=_spy, now=_now) == 0
+    assert _rd_calls == [] and _aruns()[-1]["status"] == "killed" and len(_apush) == 1 and _apush[0][2] == "high"
+    _ag._cli(["kill", "deal-finder"]); _ag._cli(["unkill", "daily-report"])
+    assert dr.main(["--no-push"], readers=_spy, now=_now) == 0
+_last = _aruns()[-1]
+assert _rd_calls == [1] and _last["agent"] == "daily-report" and _last["mode"] == "read_only" and _last["writes"] == []
+assert _last["status"] == "ok" and [r["tool"] for r in _last["reads"]] == ["supabase", "shopify", "actions", "approvals"]
+assert "killed agents: deal-finder" in dr.build_report({**_full, "killed": ["deal-finder"]}, [], _now).short
+with _acl.redirect_stdout(_aio.StringIO()):
+    _ag._cli(["unkill", "deal-finder"])
 _ag.approvals.push, _aap._notify = _a_orig_push, _a_orig_notify
 if _a_old_ops is None:
     del _ao.environ["LUXELLA_OPS_DIR"]

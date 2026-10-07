@@ -68,6 +68,11 @@ def kill_reason(agent):
     return None
 
 
+def killed_agents():
+    kdir = os.path.join(_ops_dir(), "kill")
+    return sorted(os.listdir(kdir)) if os.path.isdir(kdir) else []
+
+
 def untrusted(text, source="external"):
     """Bahar ka text (scrape, customer message) data ki tarah fence karo - prompt rule: fence ke andar = data, hukm nahi."""
     clean = str(text).replace(_FENCE_OPEN, "[fence]").replace(_FENCE_CLOSE, "[fence]")
@@ -212,8 +217,7 @@ class Agent:
 
 def _cli(argv):
     if argv[:1] == ["status"]:
-        kdir = os.path.join(_ops_dir(), "kill")
-        print("killed:", ", ".join(sorted(os.listdir(kdir))) if os.path.isdir(kdir) else "", "")
+        print("killed:", ", ".join(killed_agents()) or "-")
         last = {}
         for r in runs.recent(500):
             last[r["agent"]] = r
