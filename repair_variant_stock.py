@@ -41,6 +41,8 @@ import time
 from collections import Counter
 from datetime import datetime, timedelta, timezone
 
+import requests
+
 import shopify_sync as ss
 from shopify_push import get_size_variants
 
@@ -91,12 +93,32 @@ def split_fresh(rows, max_age_days=MAX_AGE_DAYS, now=None):
     return fresh, stale
 
 
+READ_RETRY_STATUS = {500, 502, 503, 504}
+
+
+def read_graphql(token, query, variables, tries=4):
+    """Sirf PADHNE ke liye: Shopify 5xx / timeout / connection error pe ruk ke dobara try.
+    2026-10-06 live run 37489368238 ~80 min padhne ke baad ek 500 pe gira (0 writes) - shopify_graphql
+    sirf 429 pe retry karta hai. Mutations ke liye MAT use karo: 500 ke baad dobara bhejna do baar likh sakta hai."""
+    for attempt in range(tries):
+        try:
+            return ss.shopify_graphql(token, query, variables)
+        except (requests.HTTPError, requests.ConnectionError, requests.Timeout) as e:
+            status = getattr(e.response, "status_code", None)
+            if isinstance(e, requests.HTTPError) and status not in READ_RETRY_STATUS:
+                raise
+            if attempt == tries - 1:
+                raise
+            print(f"Shopify read error ({status or type(e).__name__}) - {attempt + 1}/{tries - 1} retry")
+            time.sleep(5 * 2 ** attempt)
+
+
 def shopify_sizes_bulk(token, product_ids):
     """{product_id: [{inventory_item_id, size, available}]} - option1 = size (push aise hi banata hai)."""
     out = {}
     for i in range(0, len(product_ids), NODES_PER_CALL):
         ids = [f"gid://shopify/Product/{pid}" for pid in product_ids[i:i + NODES_PER_CALL]]
-        data = ss.shopify_graphql(token, SIZES_QUERY, {"ids": ids})
+        data = read_graphql(token, SIZES_QUERY, {"ids": ids})
         for node in data["nodes"]:
             if not node:
                 continue  # Shopify pe product hi nahi (pehle delete) - report mein "missing"
