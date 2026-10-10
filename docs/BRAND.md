@@ -144,11 +144,13 @@ Full tokens: `docs/DESIGN.md`. Key rules:
 2. Selling price = landed cost × (1 + **25% margin**), rounded to …99.
 3. Compare-at (MRP) = selling price ÷ (1 − 0.35), so every product shows a **35% "discount"**.
 
-⚠️ **Conflict:** step 3 creates crossed-out "35% off" framing on every product. DESIGN.md and luxury-voice say no
-crossed-out or discount framing. **The founder decides:**
-- (a) keep the compare-at;
-- (b) show it only when the brand itself is discounted (real MRP);
-- (c) remove it.
+**Decision (founder, 2026-10-10): option (b).** Show a crossed-out price **only when the brand itself has
+discounted the item**, using the brand's real original price converted with the same formula. Otherwise show one
+price, with no fake "35% off".
+
+**Not built yet.** The scrapers don't capture the brand's original price (`pricing.py` still forces 35% on every
+product). It needs its own spec: capture the source compare-at, then change push and sync, then a dry-run on the
+live prices.
 
 ## 9. Customer promises (⚠️ every line needs the founder's confirmation before it appears on the site)
 | Promise | Current state | Needs |
@@ -176,7 +178,7 @@ crossed-out or discount framing. **The founder decides:**
 - **Server:** SSH key-only, firewall 22-only, fail2ban.
 
 ## 12. Open decisions (founder)
-1. Compare-at / "35% off" framing (§8).
+1. ~~Compare-at framing~~ decided (b), real brand discounts only; build pending (§8).
 2. Every customer promise in §9.
 3. Custom domain + WhatsApp number.
 4. Logo / wordmark usage rules (not documented yet).
