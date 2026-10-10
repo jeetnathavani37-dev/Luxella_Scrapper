@@ -60,7 +60,22 @@ site.
   source price (Kiri Bag: $195 → ₹28,099, about 144× including shipping and margin).
 - **Never copy** Kicksmachine's "always in stock" listings: they mean selling items that are gone.
 
-*The full benchmark tables and the top patterns to adopt are added here when the teardown finishes.*
+### UX benchmark (teardown 2026-10-10)
+Screenshots and page text: `/root/backups/2026-10-10/benchmark/`. Gucci blocked every fetch (no data). Balenciaga is
+desktop only.
+
+| | Indian resellers do | Balenciaga does | **Luxella adopts** |
+|---|---|---|---|
+| Authenticity | certificate / "100% authentic or money back" on PDP | implicit | **calm line on every PDP + "How we authenticate" page** |
+| Delivery | pincode check, "ships tomorrow", 18–28 days | estimated date range | **one honest date range, everywhere** |
+| Price | strike price, % OFF, "SALE" | one price | **one price, landed (duties incl.)** |
+| Payments | EMI, UPI, COD loud | cards, Klarna | **one muted line** |
+| PDP | sticky add-to-bag, size chart, "we'll source it" | stacked images, details accordion, "Style it with" | **all of these, quietly** |
+| Contact | green WhatsApp bubble | book appointment | **WhatsApp concierge, ink icon** |
+| Collection | filter + sort | chips + "available online" toggle | **filters + "available now" default** |
+
+**Never adopt:** "x sold", "Only 1 left", % OFF, ticker bars, app pop-ups, celebrity walls.
+Build spec: `docs/specs/2026-10-10-storefront-uplift.md`.
 
 ## 4. Voice and tone
 Full rules: `.claude/skills/luxury-voice/SKILL.md`. In short:
@@ -80,7 +95,7 @@ Full tokens: `docs/DESIGN.md`. Key rules:
 
 | Element | Rule |
 |---|---|
-| Colours | `--bg #0B0B0B`, `--surface #141414`, `--ink #F5F1EA`, `--muted #A59F94`, `--line #262626`, **`--gold #B8975A`** (the ONE accent, at most 2 per screen), `--paper #F5F1EA` (light sections) |
+| Colours | **gold never as text on paper (2.45:1, fails AA)**. `--bg #0B0B0B`, `--surface #141414`, `--ink #F5F1EA`, `--muted #A59F94`, `--line #262626`, **`--gold #B8975A`** (the ONE accent, at most 2 per screen), `--paper #F5F1EA` (light sections) |
 | Type | Headings in a light serif (Cormorant Garamond; the live theme uses Cormorant + Jost). Body in a clean sans. Max 2 typefaces. Scale 12/14/16/20/28/40/64, body line-height 1.6 |
 | Layout | 8 px grid, whitespace instead of dividers, max content width 1200 px, imagery edge to edge, mobile first (390 → 768 → 1280) |
 | Motion | 300–600 ms ease-out, fades and gentle translate only, no bounce, respect reduced-motion. **Speed beats motion** (§7) |
@@ -89,7 +104,7 @@ Full tokens: `docs/DESIGN.md`. Key rules:
 | Accessibility | contrast AA, keyboard navigable, visible focus, 44 px touch targets |
 
 ## 6. Storefront standards (what every page must have)
-*Starting checklist; the audit and benchmark (2026-10-10) will refine it.*
+*Refined by the 2026-10-10 audit and benchmark. Live gaps: Sale badges everywhere, dead nav to `/`, `/pages/authenticity` 404, delivery 3–4 weeks vs 10–18 days conflict, Handbags holds boots, one-image PDPs.*
 - **Header:** logo, 5–7 clear categories (Bags, Shoes, Clothing, Accessories, Brands, New In), visible search, bag
   icon. No promo marquee.
 - **Home:** an editorial hero (one strong image or short video, poster as LCP), curated edits ("New this week",
@@ -182,8 +197,8 @@ live prices.
 2. Every customer promise in §9.
 3. Custom domain + WhatsApp number.
 4. Logo / wordmark usage rules (not documented yet).
-5. Which benchmark patterns to adopt (after the teardown).
+5. Delivery range, authenticity promise, returns, payments, duties wording (storefront-uplift spec).
 
 ## Change log
 - **2026-10-10:** first version, compiled from DESIGN.md, PRD.md, the luxury-voice skill, `pricing.py` and the
-  2026-10-04..10 operations work. Benchmark and audit sections are pending.
+  2026-10-04..10 operations work. Benchmark and audit sections added the same day.
