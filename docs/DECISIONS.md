@@ -17,3 +17,4 @@ Format: date, decision, why, alternatives considered.
   - Mode, budget and auto actions come from `agents.json` and change only through a PR. CI enforces evals (≥ 20, ≥ 3 injection, ≥ 3 edge).
   - Why: one safe path instead of each agent re-implementing safety, so a bug touches at most N things and the founder can stop anything in one command.
   - Automatic demotion is deferred until an agent reaches auto. Spec: `docs/specs/2026-10-07-agent-standard.md`.
+- 2026-10-10: Compare-at (crossed-out MRP) is shown only when the brand itself discounts the item (founder option b). The fixed "35% off on every product" in `pricing.py` (MIN_DISCOUNT_PERCENT) goes. Why: a fake discount on every item is not luxury, and it conflicts with DESIGN.md and luxury-voice. Real brand sales are worth showing, because they are true. The build needs the source compare-at captured by the scrapers; it gets its own spec.
