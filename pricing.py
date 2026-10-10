@@ -13,12 +13,14 @@ technically packaged-goods specific hai (Legal Metrology Act) - isliye
 Shopify ka "Compare at price" use kiya hai (same visual effect, bina
 literal MRP claim ke).
 
-NOTE (2026-08-30) #3: Formula change - pehle compare_at ek fixed higher
-margin (45%) pe based tha, jisse sirf ~14% "off" dikhta tha (bohot kam,
-retail standard se neeche). Ab MIN_DISCOUNT_PERCENT (35%) se seedha
-compute hota hai: compare_at = selling_price / (1 - 0.35). Isse HAR
-product ka discount display kam se kam ~35% guarantee hota hai
-(rounding ki wajah se thoda zyada bhi dikh sakta hai, kabhi kam nahi).
+NOTE (2026-10-10) #3: Compare-at ab sirf REAL brand discount pe dikhta
+hai (founder decision b; spec docs/specs/2026-10-10-compare-at-real-
+discounts.md). Pehle MIN_DISCOUNT_PERCENT (35%) se HAR product pe fake
+"~35% off" dikhta tha - wo hata diya. Ab calculate_pricing() optional
+source_compare_at leta hai (source currency, brand ka apna original/was
+price): agar wo current price se zyada ho, usi landed pipeline se convert
+karke compare_at banta hai (aur tabhi jab wo selling se upar lande);
+warna compare_at_price_inr = None (ek hi price, koi strike nahi).
 
 NOTE (2026-09-07): US sales tax add kiya - US retail sites price
 DISPLAY karte hain BINA tax ke (tax checkout pe add hota hai, ship-to
@@ -49,7 +51,6 @@ CURRENCY_TO_INR = {
 }
 SHIPPING_PER_KG = 1250
 MARGIN = 0.25
-MIN_DISCOUNT_PERCENT = 0.35  # har product pe kam se kam itna "% off" dikhna chahiye
 
 UAE_RESHIP_FEE_INR = 750  # ShipGlobal ka India->UAE reship charge (Rs 700-800 range ka midpoint)
 
@@ -106,18 +107,19 @@ def round_to_99(value):
     return math.ceil(value / 100) * 100 - 1
 
 
-def calculate_compare_at_price(selling_price_inr):
-    """selling_price se MRP/compare-at calculate karta hai, taaki kam se
-    kam MIN_DISCOUNT_PERCENT (35%) off dikhe. Formula: compare_at =
-    selling / (1 - 0.35). Rounding ki wajah se actual % off 35% se
-    thoda zyada bhi ho sakta hai, kabhi kam nahi."""
-    if selling_price_inr is None:
-        return None
-    raw_compare_at = selling_price_inr / (1 - MIN_DISCOUNT_PERCENT)
-    return round_to_99(raw_compare_at)
+def _anchor_selling(src_price, rate, weight_kg, tax_rate, destination):
+    """source-currency price -> uska landed INR selling-equivalent (...99),
+    wahi pipeline jo asli selling price use karta hai. Sirf brand ke apne
+    original/was price ko compare-at anchor mein badalne ke liye."""
+    price_inr = round(src_price * rate * (1 + tax_rate), 2)
+    landed = round(price_inr + (weight_kg * SHIPPING_PER_KG), 2)
+    if destination == "uae":
+        landed = round(landed + UAE_RESHIP_FEE_INR, 2)
+    return round_to_99(landed * (1 + MARGIN))
 
 
-def calculate_pricing(price, category, currency="USD", name=None, destination="india"):
+def calculate_pricing(price, category, currency="USD", name=None, destination="india",
+                      source_compare_at=None):
     """destination: "india" (default, jaisa hamesha se tha) ya "uae"
     (UAE-selling ke liye - India-shipping ke upar ShipGlobal ka extra
     reship-fee add hota hai). Output hamesha INR mein hi rehta hai
@@ -145,7 +147,14 @@ def calculate_pricing(price, category, currency="USD", name=None, destination="i
     raw_selling_price = landed_cost_inr * (1 + MARGIN)
     selling_price_inr = round_to_99(raw_selling_price)
 
-    compare_at_price_inr = calculate_compare_at_price(selling_price_inr)
+    # Compare-at (crossed-out "was") sirf tab jab brand khud apne original price
+    # se neeche bech raha ho. Us original ko usi landed pipeline se convert karo,
+    # aur tabhi rakho jab wo sach mein hamari selling se upar lande. Warna koi strike nahi.
+    compare_at_price_inr = None
+    if source_compare_at is not None and source_compare_at > price:
+        anchor = _anchor_selling(source_compare_at, rate, weight_kg, tax_rate, destination)
+        if anchor is not None and anchor > selling_price_inr:
+            compare_at_price_inr = anchor
 
     return {
         "price_inr": price_inr,

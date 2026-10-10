@@ -1280,4 +1280,17 @@ for _k, _v in _tf_old.items():
     else:
         _to.environ[_k] = _v
 
+# --- pricing.py: compare-at = real brand discount only (spec 2026-10-10) ---
+import pricing as _pr
+_p_base = _pr.calculate_pricing(100.0, "handbags", currency="USD")                      # koi anchor nahi
+assert _p_base["compare_at_price_inr"] is None                                          # no source -> no strike
+_p_low = _pr.calculate_pricing(100.0, "handbags", currency="USD", source_compare_at=100.0)
+assert _p_low["compare_at_price_inr"] is None                                           # anchor price se upar nahi -> no strike
+_p_real = _pr.calculate_pricing(100.0, "handbags", currency="USD", source_compare_at=150.0)
+assert _p_real["compare_at_price_inr"] is not None
+assert _p_real["compare_at_price_inr"] > _p_real["selling_price_inr"]                   # real strike selling se upar
+assert _p_real["compare_at_price_inr"] % 100 == 99                                      # ...99 rounding
+assert _p_base["selling_price_inr"] == _p_real["selling_price_inr"] == _p_low["selling_price_inr"]  # selling kabhi nahi hila
+assert not hasattr(_pr, "MIN_DISCOUNT_PERCENT") and not hasattr(_pr, "calculate_compare_at_price")
+
 print("ok")
