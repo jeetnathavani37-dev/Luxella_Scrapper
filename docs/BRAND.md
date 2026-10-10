@@ -170,11 +170,11 @@ live prices.
 ## 9. Customer promises (⚠️ every line needs the founder's confirmation before it appears on the site)
 | Promise | Current state | Needs |
 |---|---|---|
-| Authenticity | Bought only from the brand's official store | Wording + proof (invoice on request?) ⚠️ |
-| Delivery time | Unknown publicly (US/UK → reshipper → India) | Honest range, e.g. "10–18 business days" ⚠️ |
-| Duties and taxes | Built into the landed cost? | State it clearly: "prices include duties" or not ⚠️ |
-| Returns | Not defined | Policy (e.g. no returns on resale vs exchange) ⚠️ |
-| Payments | Shopify checkout | UPI / cards / EMI / COD? ⚠️ |
+| Authenticity | **Guaranteed via CheckCheck; if an item is found fake, full refund** (founder 2026-10-10) | Live |
+| Delivery time | **Up to 4 weeks** (founder 2026-10-10). Fix the shipping page (3–4 wks) and FAQ (10–18 days) to match | Live |
+| Duties and taxes | **Included in the price** (founder 2026-10-10): "Price includes customs duties and taxes" | Live |
+| Returns | Keep current: refund only if not authentic or damaged; cancel within 12 h (founder 2026-10-10, "baki jo sabka hai wahi") | Live |
+| Payments | Standard Shopify checkout; show only methods actually enabled (verify in checkout before stating) | Verify |
 | Contact | WhatsApp concierge planned (Chatwoot) | Number + hours ⚠️ |
 | Sourcing / pre-order | Items are ordered after the customer pays | Say so honestly ("sourced to order") ⚠️ |
 
@@ -194,7 +194,7 @@ live prices.
 
 ## 12. Open decisions (founder)
 1. ~~Compare-at framing~~ decided (b), real brand discounts only; build pending (§8).
-2. Every customer promise in §9.
+2. ~~Customer promises in §9~~ answered 2026-10-10 (delivery 4 wks, CheckCheck + refund, duties included, returns kept); payments line pending a checkout check.
 3. Custom domain + WhatsApp number.
 4. Logo / wordmark usage rules (not documented yet).
 5. Delivery range, authenticity promise, returns, payments, duties wording (storefront-uplift spec).
