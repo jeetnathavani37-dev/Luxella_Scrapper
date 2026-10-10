@@ -173,7 +173,7 @@ live prices.
 | Authenticity | **Guaranteed via CheckCheck; if an item is found fake, full refund** (founder 2026-10-10) | Live |
 | Delivery time | **Up to 4 weeks** (founder 2026-10-10). Fix the shipping page (3–4 wks) and FAQ (10–18 days) to match | Live |
 | Duties and taxes | **Included in the price** (founder 2026-10-10): "Price includes customs duties and taxes" | Live |
-| Returns | Keep current: refund only if not authentic or damaged; cancel within 12 h (founder 2026-10-10, "baki jo sabka hai wahi") | Live |
+| Returns | Cancel within 3 h of ordering; after that no cancel. No returns for change of mind/size; damaged/incorrect within 48 h; full refund if an item is fake (founder 2026-10-10) | Live |
 | Payments | Standard Shopify checkout; show only methods actually enabled (verify in checkout before stating) | Verify |
 | Contact | WhatsApp concierge planned (Chatwoot) | Number + hours ⚠️ |
 | Sourcing / pre-order | Items are ordered after the customer pays | Say so honestly ("sourced to order") ⚠️ |
