@@ -1290,7 +1290,9 @@ _p_real = _pr.calculate_pricing(100.0, "handbags", currency="USD", source_compar
 assert _p_real["compare_at_price_inr"] is not None
 assert _p_real["compare_at_price_inr"] > _p_real["selling_price_inr"]                   # real strike selling se upar
 assert _p_real["compare_at_price_inr"] % 100 == 99                                      # ...99 rounding
-assert _p_base["selling_price_inr"] == _p_real["selling_price_inr"] == _p_low["selling_price_inr"]  # selling kabhi nahi hila
+_p_cap = _pr.calculate_pricing(100.0, "handbags", currency="USD", source_compare_at=5000.0)
+assert _p_cap["compare_at_price_inr"] is None                                           # absurd anchor (>85% off) -> dropped
+assert _p_base["selling_price_inr"] == _p_real["selling_price_inr"] == _p_low["selling_price_inr"] == _p_cap["selling_price_inr"]  # selling kabhi nahi hila
 assert not hasattr(_pr, "MIN_DISCOUNT_PERCENT") and not hasattr(_pr, "calculate_compare_at_price")
 
 print("ok")

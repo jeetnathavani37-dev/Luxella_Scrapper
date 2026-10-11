@@ -52,6 +52,11 @@ CURRENCY_TO_INR = {
 SHIPPING_PER_KG = 1250
 MARGIN = 0.25
 
+# Compare-at guard: real brand sales can be deep (Michael Kors ~70-80% off on
+# its US site), so the cap is generous - an anchor implying MORE than this "% off"
+# is treated as a bad/fluff source anchor and dropped (product shows one price).
+MAX_COMPARE_AT_DISCOUNT = 0.85
+
 UAE_RESHIP_FEE_INR = 750  # ShipGlobal ka India->UAE reship charge (Rs 700-800 range ka midpoint)
 
 # US retail prices tax-EXCLUSIVE display hote hain (checkout pe add hota
@@ -154,7 +159,9 @@ def calculate_pricing(price, category, currency="USD", name=None, destination="i
     if source_compare_at is not None and source_compare_at > price:
         anchor = _anchor_selling(source_compare_at, rate, weight_kg, tax_rate, destination)
         if anchor is not None and anchor > selling_price_inr:
-            compare_at_price_inr = anchor
+            implied_discount = (anchor - selling_price_inr) / anchor
+            if implied_discount <= MAX_COMPARE_AT_DISCOUNT:          # bad/fluff anchor -> no strike
+                compare_at_price_inr = anchor
 
     return {
         "price_inr": price_inr,

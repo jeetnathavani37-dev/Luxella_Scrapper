@@ -10,6 +10,11 @@ selling it below its own original price, converted with our landed-cost formula 
   the real data so a strike can come back only when it is true.
 - Scrapers capture only the current `price` — never the source's own original / was / list price.
 
+## Founder decisions (2026-10-11)
+1. **Multi-size products:** single price now — per-size source anchors are OUT of scope; multi-size products show no strike even if the brand discounts (acceptable).
+2. **Bad-anchor cap:** YES. `MAX_COMPARE_AT_DISCOUNT = 0.85` in pricing.py — an anchor implying more than 85% off is dropped (shows one price). Generous because real brand sales reach ~70–80% (Michael Kors).
+3. **Rollout batches:** 5-row canary → id-ordered ≤1000 batches for the Slice 2 apply.
+
 ## In scope
 1. **Scrapers capture the source original price.**
    - In each scraper's extraction, also read the brand's own strikethrough / was / list / regular / compare price
