@@ -96,3 +96,6 @@ selling it below its own original price, converted with our landed-cost formula 
    4. scraper capture of `source_compare_at` (per scraper) + fixtures.
 3. Dry-run → founder reviews counts + the top-20 discounts → small batch (5) → full, re-checking at each step.
 4. Verify on the live store (acceptance #5/#6).
+
+## Build note (2026-10-12): selling price is NOT recomputed
+The one-time backfill (`recompute_compare_at.py`) only **nulls** the fake compare_at; it never recomputes selling. Reason found in the dry-run: stored `selling_price_inr` is historical (priced at the FX rate + tax in force then), so recomputing it now with the evolved formula (USD FX, the Sept-2026 7% US sales tax) changes it. So selling is left exactly as stored. No product currently has a real `source_compare_at` (scrapers capture it only from Slice 4), so every current compare_at is the fake 35% and is nulled. Real strikes return as sites are re-scraped (db.py then computes selling + compare_at together at the same FX). Dry-run (2026-10-12): **73,258** products have a fake compare_at to remove.
