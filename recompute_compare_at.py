@@ -32,18 +32,21 @@ PAGE = 1000
 
 
 def iter_products():
-    """id-order paging (PostgREST 1000-row cap ke upar bhi chalta hai).
-    Sirf wahi rows jinka compare_at_price_inr abhi set hai (unhe hatana hai)."""
+    """Pure id-order paging over the whole table, compare_at filter applied in
+    Python. A server-side `not.is null` filter combined with `order by id` makes
+    Postgres walk scattered matches and times out (57014); a plain PK range scan
+    never does (safe-writes: order by id and filter). We only yield rows whose
+    compare_at_price_inr is currently set (those are the ones to clear)."""
     last = -1
     while True:
         rows = (supabase.table("products")
                 .select("id,name,price,selling_price_inr,compare_at_price_inr")
-                .not_.is_("compare_at_price_inr", "null")
                 .gt("id", last).order("id").limit(PAGE).execute().data) or []
         if not rows:
             return
         for r in rows:
-            yield r
+            if r.get("compare_at_price_inr") is not None:
+                yield r
         last = rows[-1]["id"]
         if len(rows) < PAGE:
             return
