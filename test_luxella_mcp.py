@@ -22,6 +22,9 @@ assert m.price_stock_changes({**base, "last_synced_in_stock": None}) == ["in_sto
 assert m.price_stock_changes({**base, "shopify_variant_id": None}) is None
 # source price 0: price nahi bhejte (floor Rs799), sirf stock 0
 assert m.price_stock_changes({**base, "price": 0, "selling_price_inr": 799}) == ["in_stock True -> False"]
+# compare-at clear (value -> None) ab detect hota hai, taaki fake strike Shopify se hat jaaye
+assert m.price_stock_changes({**base, "compare_at_price_inr": None}) == ["compare_at 15399 -> None"]
+assert m.price_stock_changes({**base, "compare_at_price_inr": None, "last_synced_compare_at_price_inr": None}) == []
 
 # duplicate rule (mirror of shopify_push.run)
 assert m.is_duplicate({"fp": 5000}, "fp", 5000)

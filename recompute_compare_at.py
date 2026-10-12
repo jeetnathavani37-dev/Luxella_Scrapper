@@ -70,13 +70,17 @@ def main(apply):
     os.chmod(backup_path, 0o600)
     print(f"\n[recompute] backup of {len(rows)} rows -> {backup_path}")
 
+    ids = [r["id"] for r in rows]
     written = 0
-    for idx in range(0, len(rows), PAGE):
-        for r in rows[idx:idx + PAGE]:
-            supabase.table("products").update({"compare_at_price_inr": None}).eq("id", r["id"]).execute()
-            written += 1
-        print(f"  written {written}/{len(rows)}")
-    print(f"[recompute] done. {written} compare_at cleared. The daily sync will clear them on Shopify too.")
+    CHUNK = 200  # safe-writes: Supabase .in_() 200 ya kam per call
+    for idx in range(0, len(ids), CHUNK):
+        chunk = ids[idx:idx + CHUNK]
+        supabase.table("products").update({"compare_at_price_inr": None}).in_("id", chunk).execute()
+        written += len(chunk)
+        if idx % 4000 == 0:
+            print(f"  cleared {written}/{len(ids)}")
+    print(f"[recompute] done. {written} compare_at cleared. Shopify tab saaf hoga jab Slice 3 "
+          "(clear-on-null) deploy hoga; theme pe strike waise bhi nahi dikhta.")
     return 0
 
 
