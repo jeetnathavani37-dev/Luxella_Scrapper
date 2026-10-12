@@ -148,6 +148,10 @@ def scrape_shopify_catalog(config, get=requests.get):
                 "sku": variant.get("sku") or str(p.get("id")),
                 "name": p.get("title"),
                 "price": float(variant["price"]) if variant.get("price") else None,
+                # Slice 4: the brand's own compare-at from Shopify's variant JSON.
+                # None when the source shows no discount; pricing.py keeps it only
+                # if it's a genuine anchor (> price, <=85% off), else nulls it.
+                "source_compare_at_price": float(variant["compare_at_price"]) if variant.get("compare_at_price") else None,
                 "in_stock": variant.get("available"),
                 "product_url": f"{domain}/products/{p.get('handle')}",
                 "image_url": primary_image,
