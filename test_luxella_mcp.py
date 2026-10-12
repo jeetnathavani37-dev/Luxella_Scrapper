@@ -22,6 +22,9 @@ assert m.price_stock_changes({**base, "last_synced_in_stock": None}) == ["in_sto
 assert m.price_stock_changes({**base, "shopify_variant_id": None}) is None
 # source price 0: price nahi bhejte (floor Rs799), sirf stock 0
 assert m.price_stock_changes({**base, "price": 0, "selling_price_inr": 799}) == ["in_stock True -> False"]
+# compare-at clear (value -> None) ab detect hota hai, taaki fake strike Shopify se hat jaaye
+assert m.price_stock_changes({**base, "compare_at_price_inr": None}) == ["compare_at 15399 -> None"]
+assert m.price_stock_changes({**base, "compare_at_price_inr": None, "last_synced_compare_at_price_inr": None}) == []
 
 # duplicate rule (mirror of shopify_push.run)
 assert m.is_duplicate({"fp": 5000}, "fp", 5000)
@@ -1279,5 +1282,20 @@ for _k, _v in _tf_old.items():
         _to.environ.pop(_k, None)
     else:
         _to.environ[_k] = _v
+
+# --- pricing.py: compare-at = real brand discount only (spec 2026-10-10) ---
+import pricing as _pr
+_p_base = _pr.calculate_pricing(100.0, "handbags", currency="USD")                      # koi anchor nahi
+assert _p_base["compare_at_price_inr"] is None                                          # no source -> no strike
+_p_low = _pr.calculate_pricing(100.0, "handbags", currency="USD", source_compare_at=100.0)
+assert _p_low["compare_at_price_inr"] is None                                           # anchor price se upar nahi -> no strike
+_p_real = _pr.calculate_pricing(100.0, "handbags", currency="USD", source_compare_at=150.0)
+assert _p_real["compare_at_price_inr"] is not None
+assert _p_real["compare_at_price_inr"] > _p_real["selling_price_inr"]                   # real strike selling se upar
+assert _p_real["compare_at_price_inr"] % 100 == 99                                      # ...99 rounding
+_p_cap = _pr.calculate_pricing(100.0, "handbags", currency="USD", source_compare_at=5000.0)
+assert _p_cap["compare_at_price_inr"] is None                                           # absurd anchor (>85% off) -> dropped
+assert _p_base["selling_price_inr"] == _p_real["selling_price_inr"] == _p_low["selling_price_inr"] == _p_cap["selling_price_inr"]  # selling kabhi nahi hila
+assert not hasattr(_pr, "MIN_DISCOUNT_PERCENT") and not hasattr(_pr, "calculate_compare_at_price")
 
 print("ok")

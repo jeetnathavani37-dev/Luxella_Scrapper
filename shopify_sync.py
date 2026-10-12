@@ -117,9 +117,12 @@ def update_variant(access_token, variant_id, price, compare_at_price):
         "X-Shopify-Access-Token": access_token,
         "Content-Type": "application/json",
     }
-    variant_payload = {"id": variant_id, "price": str(price)}
-    if compare_at_price:
-        variant_payload["compare_at_price"] = str(compare_at_price)
+    # compare_at_price None = Shopify pe crossed-out price HATAO (sirf skip nahi).
+    variant_payload = {
+        "id": variant_id,
+        "price": str(price),
+        "compare_at_price": str(compare_at_price) if compare_at_price else None,
+    }
     payload = {"variant": variant_payload}
     resp = requests.put(f"{get_shopify_base_url()}/variants/{variant_id}.json", headers=headers, json=payload, timeout=30)
     resp.raise_for_status()
@@ -324,12 +327,16 @@ def run():
                 and current_price is not None
                 and (last_price is None or float(current_price) != float(last_price))
             )
-            compare_at_changed = (
-                not zero_price
-                and current_compare_at is not None
-                and (last_compare_at is None or float(current_compare_at) != float(last_compare_at))
-            )
-            if price_changed or compare_at_changed:
+            # None-safe: compare_at None->value, value->None (clear) ya value->value, sab change
+            # gine jaate hain - taaki purana fake strike Shopify se hat jaaye
+            # (spec 2026-10-10-compare-at-real-discounts).
+            _cur_ca = None if current_compare_at is None else float(current_compare_at)
+            _last_ca = None if last_compare_at is None else float(last_compare_at)
+            compare_at_changed = not zero_price and _cur_ca != _last_ca
+            # Belt-and-suspenders: never call update_variant with a None price (it would
+            # send the literal "None" to Shopify). Can't happen in practice today, but the
+            # hard rule is price 0/None must never reach Shopify.
+            if (price_changed or compare_at_changed) and current_price is not None:
                 update_variant(access_token, variant_id, current_price, current_compare_at)
                 print(f"  [PRICE] {p.get('name')}: price {last_price}->{current_price}, "
                       f"MRP {last_compare_at}->{current_compare_at}")

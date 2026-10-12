@@ -94,7 +94,9 @@ def price_stock_changes(p):
     changes = []
     if not zero_price and price is not None and (last_price is None or float(price) != float(last_price)):
         changes.append(f"price {last_price} -> {price}")
-    if not zero_price and mrp is not None and (last_mrp is None or float(mrp) != float(last_mrp)):
+    _mrp = None if mrp is None else float(mrp)          # None-safe: compare_at clear (value -> None) bhi change hai
+    _last_mrp = None if last_mrp is None else float(last_mrp)
+    if not zero_price and _mrp != _last_mrp:
         changes.append(f"compare_at {last_mrp} -> {mrp}")
     if last_stock is None or stock != last_stock:
         changes.append(f"in_stock {last_stock} -> {stock}")
