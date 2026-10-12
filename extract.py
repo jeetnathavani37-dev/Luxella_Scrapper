@@ -64,6 +64,13 @@ def extract_products(page, config):
 
         name = name_el.inner_text().strip() if name_el else None
         price_raw = price_el.inner_text().strip() if price_el else None
+        # Slice 4: the brand site's own original / strikethrough price (next to the sale
+        # price). Only sites whose config defines compare_at_selector capture it; others
+        # stay None -> pricing.py then emits no strike. A real anchor -> a real discount.
+        compare_at_raw = None
+        if config.get("compare_at_selector"):
+            ca_el = tile.query_selector(config["compare_at_selector"])
+            compare_at_raw = ca_el.inner_text().strip() if ca_el else None
         product_url = link_el.get_attribute("href") if link_el else None
         if product_url and product_url.startswith("/"):
             product_url = page.url.split("/", 3)[0] + "//" + page.url.split("/", 3)[2] + product_url
@@ -89,6 +96,7 @@ def extract_products(page, config):
             "sku": sku,
             "name": name,
             "price": to_num(price_raw),
+            "source_compare_at_price": to_num(compare_at_raw),
             "in_stock": True,
             "product_url": product_url,
             "image_url": image_url,

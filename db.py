@@ -62,7 +62,8 @@ def log_change(site, sku, product_url, name, change_type, old_value, new_value):
     }).execute()
 
 
-PRICE_FIELDS = ("price", "price_inr", "landed_cost_inr", "selling_price_inr", "compare_at_price_inr")
+PRICE_FIELDS = ("price", "price_inr", "landed_cost_inr", "selling_price_inr",
+                "compare_at_price_inr", "source_compare_at_price")
 
 
 def _prepare(product):
@@ -71,11 +72,15 @@ def _prepare(product):
     if product.get("price") is not None and product["price"] <= 0:
         product = {**product, "price": None}
 
+    # Slice 4: source_compare_at_price = the brand site's own original/strikethrough
+    # price (scraper fills it; None when the source shows no discount). pricing.py sets
+    # a real compare-at only when this is a genuine, in-range anchor; else None.
     pricing_fields = calculate_pricing(
         product.get("price"),
         product.get("category"),
         product.get("currency", "USD"),
         name=product.get("name"),
+        source_compare_at=product.get("source_compare_at_price"),
     )
     return {**product, **pricing_fields}
 
