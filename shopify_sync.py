@@ -333,7 +333,10 @@ def run():
             _cur_ca = None if current_compare_at is None else float(current_compare_at)
             _last_ca = None if last_compare_at is None else float(last_compare_at)
             compare_at_changed = not zero_price and _cur_ca != _last_ca
-            if price_changed or compare_at_changed:
+            # Belt-and-suspenders: never call update_variant with a None price (it would
+            # send the literal "None" to Shopify). Can't happen in practice today, but the
+            # hard rule is price 0/None must never reach Shopify.
+            if (price_changed or compare_at_changed) and current_price is not None:
                 update_variant(access_token, variant_id, current_price, current_compare_at)
                 print(f"  [PRICE] {p.get('name')}: price {last_price}->{current_price}, "
                       f"MRP {last_compare_at}->{current_compare_at}")
