@@ -1,0 +1,16 @@
+{%- comment -%}
+  Rendered only through the Section Rendering API by assets/luxella-showcase.js, e.g.
+  /collections/handbags?section_id=luxella-showcase-rail or /collections/vendors?q=Nike&section_id=luxella-showcase-rail.
+  `collection` is the page's collection. No presets, so it cannot be added to a template by mistake.
+{%- endcomment -%}
+{%- if collection -%}
+  {% render 'luxella-showcase-rail', products: collection.products, id_prefix: collection.handle, section_id: section.id %}
+{%- endif -%}
+
+{% schema %}
+{
+  "name": "Luxella showcase rail",
+  "tag": "div",
+  "class": "lx-rail-section"
+}
+{% endschema %}

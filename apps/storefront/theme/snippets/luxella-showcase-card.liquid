@@ -1,0 +1,154 @@
+{%- comment -%}
+  Luxella showcase product card: white 4:5 frame with an image track, dots, wishlist heart and quick add,
+  then vendor, title and one ₹ price (the shared `price` snippet, so no fake compare-at).
+
+  Accepts:
+  - product {Object}: the product
+  - id_prefix {String}: makes form/title ids unique when one product appears in several rails
+  - section_id {String}: id of the section that renders the card
+  - lazy {Boolean}: lazy-load the first image. Default true
+
+  Quick add:
+  - sold out              -> a "Sold out" label, no button
+  - 1 variant, no qty rule -> Dawn <product-form>, posts straight to /cart/add
+  - otherwise             -> Dawn <modal-opener> + <quick-add-modal> (variant picker from the product page)
+
+  Usage: {% render 'luxella-showcase-card', product: product, id_prefix: 'w', section_id: section.id %}
+{%- endcomment -%}
+{%- liquid
+  assign uid = id_prefix | append: '-' | append: product.id
+  assign form_id = 'lx-qa-' | append: uid
+  assign title_id = 'lx-title-' | append: uid
+  assign variant = product.selected_or_first_available_variant
+  assign title = product.title | escape
+
+  assign needs_modal = false
+  if product.variants_count > 1
+    assign needs_modal = true
+  elsif variant.quantity_rule.min > 1 or variant.quantity_rule.max != null or variant.quantity_rule.increment > 1
+    assign needs_modal = true
+  endif
+
+  capture vendor_name
+    render 'luxella-vendor-name', vendor: product.vendor
+  endcapture
+  assign vendor_name = vendor_name | strip
+  assign image_count = product.images.size | at_most: 4
+-%}
+<li class="lx-card" data-lx-card>
+  <product-component view-event-payload="{{ product | standard_event_data: 'view', context: 'collection' | escape }}">
+    <div class="lx-card__frame">
+      <a href="{{ product.url }}" class="lx-card__media" tabindex="-1" aria-hidden="true">
+        <div class="lx-card__track" data-lx-track>
+          {%- for image in product.images limit: 4 -%}
+            {%- liquid
+              assign loading = 'lazy'
+              if forloop.first and lazy == false
+                assign loading = 'eager'
+              endif
+              assign img_alt = image.alt | default: product.title
+            -%}
+            {{
+              image
+              | image_url: width: 720
+              | image_tag:
+                widths: '180, 270, 360, 540, 720',
+                sizes: '(min-width: 990px) 240px, 188px',
+                loading: loading,
+                class: 'lx-card__img',
+                alt: img_alt
+            }}
+          {%- else -%}
+            {{ 'product-1' | placeholder_svg_tag: 'lx-card__img lx-card__img--placeholder' }}
+          {%- endfor -%}
+        </div>
+      </a>
+
+      <button
+        type="button"
+        class="lx-heart"
+        data-lx-wish="{{ product.handle }}"
+        data-lx-title="{{ title }}"
+        aria-pressed="false"
+        aria-label="Save {{ title }}"
+      >
+        <svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="true" focusable="false">
+          <path d="M21 8.25c0-2.485-2.099-4.5-4.688-4.5-1.935 0-3.597 1.126-4.312 2.733-.715-1.607-2.377-2.733-4.313-2.733C5.1 3.75 3 5.765 3 8.25c0 7.22 9 12 9 12s9-4.78 9-12z"/>
+        </svg>
+      </button>
+
+      {%- if image_count > 1 -%}
+        <div class="lx-dots" aria-hidden="true">
+          {%- for i in (1..image_count) -%}
+            <span class="lx-dot{% if forloop.first %} is-active{% endif %}"></span>
+          {%- endfor -%}
+        </div>
+      {%- endif -%}
+
+      {%- if product.available == false -%}
+        <span class="lx-soldout">{{ 'products.product.sold_out' | t }}</span>
+      {%- elsif needs_modal -%}
+        <modal-opener class="lx-qa-wrap" data-modal="#QuickAdd-{{ product.id }}">
+          <button
+            id="{{ form_id }}-submit"
+            type="button"
+            class="lx-qa"
+            aria-haspopup="dialog"
+            aria-label="{{ 'products.product.choose_options' | t }}: {{ title }}"
+            data-product-url="{{ product.url }}"
+          >
+            <span class="svg-wrapper">{{- 'icon-plus.svg' | inline_asset_content -}}</span>
+            {%- render 'loading-spinner' -%}
+          </button>
+        </modal-opener>
+        <quick-add-modal id="QuickAdd-{{ product.id }}" class="quick-add-modal">
+          <div
+            role="dialog"
+            aria-label="{{ 'products.product.choose_product_options' | t: product_name: product.title | escape }}"
+            aria-modal="true"
+            class="quick-add-modal__content global-settings-popup"
+            tabindex="-1"
+          >
+            <button
+              id="ModalClose-{{ product.id }}"
+              type="button"
+              class="quick-add-modal__toggle"
+              aria-label="{{ 'accessibility.close' | t }}"
+            >
+              {{- 'icon-close.svg' | inline_asset_content -}}
+            </button>
+            <div id="QuickAddInfo-{{ product.id }}" class="quick-add-modal__content-info"></div>
+          </div>
+        </quick-add-modal>
+      {%- else -%}
+        <product-form class="lx-qa-wrap" data-section-id="{{ section_id }}" data-hide-errors="true">
+          {%- form 'product', product, id: form_id, novalidate: 'novalidate', data-type: 'add-to-cart-form' -%}
+            <input type="hidden" name="id" value="{{ variant.id }}" class="product-variant-id">
+            <button
+              id="{{ form_id }}-submit"
+              type="submit"
+              name="add"
+              class="lx-qa"
+              aria-label="{{ 'products.product.add_to_cart' | t }}: {{ title }}"
+              data-sold-out-message="true"
+            >
+              <span class="svg-wrapper">{{- 'icon-plus.svg' | inline_asset_content -}}</span>
+              <span class="sold-out-message hidden">{{ 'products.product.sold_out' | t }}</span>
+              {%- render 'loading-spinner' -%}
+            </button>
+          {%- endform -%}
+        </product-form>
+      {%- endif -%}
+    </div>
+
+    <div class="lx-card__info">
+      {%- if vendor_name != blank -%}
+        <p class="lx-card__vendor">{{ vendor_name | escape }}</p>
+      {%- endif -%}
+      <h3 class="lx-card__title" id="{{ title_id }}">
+        <a href="{{ product.url }}" class="lx-card__link">{{ title }}</a>
+      </h3>
+      {% render 'price', product: product, price_class: 'lx-card__price' %}
+    </div>
+  </product-component>
+</li>

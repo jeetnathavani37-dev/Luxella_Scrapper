@@ -1,0 +1,58 @@
+{%- comment -%}
+  Luxella wishlist page. Saved handles live in this browser only (localStorage key "luxella:wishlist", no
+  customer data). assets/luxella-showcase.js fetches each card from sections/luxella-wishlist-card.liquid.
+{%- endcomment -%}
+{{ 'luxella-showcase.css' | asset_url | stylesheet_tag }}
+<link rel="stylesheet" href="{{ 'quick-add.css' | asset_url }}" media="print" onload="this.media='all'">
+<script src="{{ 'product-form.js' | asset_url }}" defer="defer"></script>
+<script src="{{ 'quick-add.js' | asset_url }}" defer="defer"></script>
+<script src="{{ 'luxella-showcase.js' | asset_url }}" defer="defer"></script>
+
+<lx-wishlist class="lx-showcase lx-wishlist" data-theme="{{ section.settings.theme }}" data-card-section="luxella-wishlist-card">
+  <div class="lx-showcase__inner">
+    <h1 class="lx-wishlist__title">{{ section.settings.heading | escape }}</h1>
+    <p class="lx-wishlist__note">{{ section.settings.note | escape }}</p>
+
+    <ul class="lx-grid" role="list" data-lx-wishlist-items aria-busy="true"></ul>
+
+    <div class="lx-empty lx-wishlist__empty" data-lx-wishlist-empty hidden>
+      <p>{{ section.settings.empty_text | escape }}</p>
+      <a href="{{ section.settings.empty_link | default: routes.all_products_collection_url }}" class="lx-viewall">
+        {{- section.settings.empty_link_label | escape -}}
+      </a>
+    </div>
+    <noscript><p class="lx-empty">Your saved pieces need JavaScript to show.</p></noscript>
+    <p class="visually-hidden" data-lx-live role="status" aria-live="polite"></p>
+  </div>
+</lx-wishlist>
+
+{% schema %}
+{
+  "name": "Luxella wishlist",
+  "tag": "section",
+  "class": "section",
+  "settings": [
+    { "type": "text", "id": "heading", "label": "Heading", "default": "Saved pieces" },
+    {
+      "type": "text",
+      "id": "note",
+      "label": "Note",
+      "default": "Saved on this device. Prices and availability are live."
+    },
+    { "type": "text", "id": "empty_text", "label": "Empty message", "default": "Nothing saved yet. Tap the heart on any piece to keep it here." },
+    { "type": "text", "id": "empty_link_label", "label": "Empty link label", "default": "Browse the collection" },
+    { "type": "url", "id": "empty_link", "label": "Empty link" },
+    {
+      "type": "select",
+      "id": "theme",
+      "label": "Look",
+      "options": [
+        { "value": "dark", "label": "Near-black" },
+        { "value": "ivory", "label": "Warm ivory" }
+      ],
+      "default": "dark"
+    }
+  ],
+  "presets": [{ "name": "Luxella wishlist" }]
+}
+{% endschema %}
