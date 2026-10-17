@@ -1,0 +1,16 @@
+{%- comment -%}
+  Rendered only through the Section Rendering API: /products/<handle>?section_id=luxella-wishlist-card.
+  Unlike the homepage rails, sold-out pieces are shown (with a "Sold out" label) so a saved item never vanishes.
+{%- endcomment -%}
+{%- if product -%}
+  <ul hidden>
+    {% render 'luxella-showcase-card', product: product, id_prefix: 'w', section_id: section.id %}
+  </ul>
+{%- endif -%}
+
+{% schema %}
+{
+  "name": "Luxella wishlist card",
+  "tag": "div"
+}
+{% endschema %}

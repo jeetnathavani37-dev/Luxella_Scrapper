@@ -1,0 +1,15 @@
+{
+  "sections": {
+    "wishlist": {
+      "type": "luxella-wishlist",
+      "settings": {
+        "heading": "Saved pieces",
+        "note": "Saved on this device. Prices and availability are live.",
+        "empty_text": "Nothing saved yet. Tap the heart on any piece to keep it here.",
+        "empty_link_label": "Browse the collection",
+        "theme": "dark"
+      }
+    }
+  },
+  "order": ["wishlist"]
+}

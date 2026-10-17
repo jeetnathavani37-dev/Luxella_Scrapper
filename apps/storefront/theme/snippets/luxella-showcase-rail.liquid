@@ -1,0 +1,38 @@
+{%- comment -%}
+  Luxella showcase: one horizontal rail of product cards.
+  Skips sold-out and price-0 products, so the homepage only shows pieces that can be bought.
+
+  Accepts:
+  - products {Array}: e.g. collection.products
+  - id_prefix {String}: passed to each card
+  - section_id {String}: passed to each card
+  - limit {Number}: cards to show. Default 12
+  - eager {Boolean}: load the first two images eagerly (rail visible on first paint). Default false
+
+  Usage: {% render 'luxella-showcase-rail', products: collection.products, id_prefix: collection.handle %}
+{%- endcomment -%}
+{%- liquid
+  assign max = limit | default: 12
+  assign shown = 0
+-%}
+<ul class="lx-rail" role="list" data-lx-rail>
+  {%- for product in products limit: 48 -%}
+    {%- if product.available == false or product.price == 0 -%}
+      {%- continue -%}
+    {%- endif -%}
+    {%- liquid
+      assign shown = shown | plus: 1
+      assign lazy = true
+      if eager and shown <= 2
+        assign lazy = false
+      endif
+    -%}
+    {% render 'luxella-showcase-card', product: product, id_prefix: id_prefix, section_id: section_id, lazy: lazy %}
+    {%- if shown >= max -%}
+      {%- break -%}
+    {%- endif -%}
+  {%- endfor -%}
+</ul>
+{%- if shown == 0 -%}
+  <p class="lx-empty" data-lx-empty>Nothing available in this edit right now.</p>
+{%- endif -%}
