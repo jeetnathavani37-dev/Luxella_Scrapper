@@ -88,7 +88,7 @@
       {%- if product.available == false -%}
         <span class="lx-soldout">{{ 'products.product.sold_out' | t }}</span>
       {%- elsif needs_modal -%}
-        <modal-opener class="lx-qa-wrap" data-modal="#QuickAdd-{{ product.id }}">
+        <modal-opener class="lx-qa-wrap" data-modal="#QuickAdd-{{ uid }}">
           <button
             id="{{ form_id }}-submit"
             type="button"
@@ -101,7 +101,7 @@
             {%- render 'loading-spinner' -%}
           </button>
         </modal-opener>
-        <quick-add-modal id="QuickAdd-{{ product.id }}" class="quick-add-modal">
+        <quick-add-modal id="QuickAdd-{{ uid }}" class="quick-add-modal">
           <div
             role="dialog"
             aria-label="{{ 'products.product.choose_product_options' | t: product_name: product.title | escape }}"
@@ -110,14 +110,14 @@
             tabindex="-1"
           >
             <button
-              id="ModalClose-{{ product.id }}"
+              id="ModalClose-{{ uid }}"
               type="button"
               class="quick-add-modal__toggle"
               aria-label="{{ 'accessibility.close' | t }}"
             >
               {{- 'icon-close.svg' | inline_asset_content -}}
             </button>
-            <div id="QuickAddInfo-{{ product.id }}" class="quick-add-modal__content-info"></div>
+            <div id="QuickAddInfo-{{ uid }}" class="quick-add-modal__content-info"></div>
           </div>
         </quick-add-modal>
       {%- else -%}

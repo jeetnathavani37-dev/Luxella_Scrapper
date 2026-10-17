@@ -108,6 +108,8 @@
 
   class LxShowcase extends HTMLElement {
     connectedCallback() {
+      if (this.ready) return; // the theme editor can re-attach the element; bind listeners once
+      this.ready = true;
       this.onClick = this.onClick.bind(this);
       this.onKeydown = this.onKeydown.bind(this);
       this.updateArrows = this.updateArrows.bind(this);
